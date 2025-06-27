@@ -190,7 +190,7 @@ export default function App() {
           {/* ====== Left Section: Logo and Main Navigation ====== */}
           <div className="flex items-center space-x-8">
             <Link href="/" className="flex-shrink-0 font-bold text-2xl text-gray-800">
-              Go-Fix-O
+              Rivet
             </Link>
             <div className="hidden md:flex items-center space-x-6">
               {navItems.map((item) => (

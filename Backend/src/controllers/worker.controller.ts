@@ -1,7 +1,7 @@
 import { db } from "@/config/drizzle";
-import { workers } from "@/db/schema";
+import { workers, jobs, transactions, reviews, liveLocations, specializations } from "@/db/schema";
 import { workerSchema } from "@/types/validation";
-import { eq } from "drizzle-orm";
+import { eq, sql, and, count, avg, sum } from "drizzle-orm";
 import { Request, Response } from "express";
 import { ZodError } from "zod";
 
@@ -132,5 +132,139 @@ export const deleteWorker = async (req: Request, res: Response) => {
     console.error("Error deleting worker:", error);
     res.status(500).json({ error: "Failed to delete worker" });
     return;
+  }
+};
+
+// Toggle worker availability
+export const toggleAvailability = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { isActive, lat, lng } = req.body;
+
+    // Add debug logging
+    console.log('Request body received:', req.body);
+    console.log('isActive value:', isActive, typeof isActive);
+
+    // Validate isActive is a boolean
+    if (typeof isActive !== 'boolean') {
+      res.status(400).json({ 
+        error: "isActive must be a boolean value (true/false)",
+        receivedValue: isActive,
+        receivedType: typeof isActive
+      });
+      return;
+    }
+
+    const updateData = {
+      isActive,
+      lastActiveAt: new Date()
+    };
+
+    // Update live location if provided
+    if (lat && lng) {
+      await db.insert(liveLocations)
+        .values({ workerId: id, lat, lng, createdAt: new Date() })
+        .onConflictDoUpdate({
+          target: liveLocations.workerId,
+          set: { lat, lng, createdAt: new Date() }
+        });
+    }
+
+    const [updatedWorker] = await db.update(workers)
+      .set(updateData)
+      .where(eq(workers.id, id))
+      .returning();
+
+    // Verify the update worked
+    console.log('Database update result:', updatedWorker);
+
+    res.status(200).json({
+      message: `Worker marked as ${isActive ? 'active' : 'inactive'}`,
+      isActive: updatedWorker.isActive, // Return the actual value from DB
+      data: updatedWorker
+    });
+
+  } catch (error) {
+    console.error("Error in toggleAvailability:", error);
+    res.status(500).json({ 
+      error: "Failed to update availability",
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+};
+
+// Get active workers by specialization
+export const getActiveWorkers = async (req: Request, res: Response) => {
+  try {
+    const { category } = req.query;
+    
+    const query = db.select()
+      .from(workers)
+      .innerJoin(liveLocations, eq(workers.id, liveLocations.workerId))
+      .leftJoin(specializations, eq(workers.id, specializations.workerId))
+      .where(
+        and(
+          eq(workers.isActive, true),
+          category ? eq(specializations.category, category as string) : undefined
+        )
+      );
+
+    const result = await query;
+    res.status(200).json({ data: result });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch active workers" });
+  }
+};
+
+// Get Top Workers with Statistics
+export const getTopWorkers = async (_req: Request, res: Response) => {
+  try {
+    // Get workers with their statistics
+    const workersWithStats = await db
+      .select({
+        id: workers.id,
+        firstName: workers.firstName,
+        lastName: workers.lastName,
+        email: workers.email,
+        experienceYears: workers.experienceYears,
+        profilePicture: workers.profilePicture,
+        // Calculate total income from completed transactions
+        totalIncome: sql<number>`COALESCE(SUM(${transactions.amount}), 0)`,
+        // Calculate average rating from reviews
+        averageRating: sql<number>`COALESCE(AVG(${reviews.rating}), 0)`,
+        // Calculate completion rate (completed jobs / total jobs)
+        totalJobs: count(jobs.id),
+        completedJobs: sql<number>`COUNT(CASE WHEN ${jobs.status} = 'completed' THEN 1 END)`,
+      })
+      .from(workers)
+      .leftJoin(jobs, eq(workers.id, jobs.workerId))
+      .leftJoin(transactions, eq(jobs.id, transactions.jobId))
+      .leftJoin(reviews, eq(workers.id, reviews.workerId))
+      .groupBy(workers.id, workers.firstName, workers.lastName, workers.email, workers.experienceYears, workers.profilePicture)
+      .orderBy(sql`COALESCE(SUM(${transactions.amount}), 0) DESC`);
+
+    // Transform the data to match the frontend interface
+    const transformedData = workersWithStats.map(worker => ({
+      id: worker.id,
+      name: `${worker.firstName} ${worker.lastName}`,
+      email: worker.email,
+      experienceYears: worker.experienceYears || 0,
+      profilePicture: worker.profilePicture,
+      income: Number(worker.totalIncome) || 0,
+      rating: Number(worker.averageRating) || 0,
+      completionRate: worker.totalJobs > 0 
+        ? Math.round((Number(worker.completedJobs) / Number(worker.totalJobs)) * 100)
+        : 0,
+      totalJobs: Number(worker.totalJobs) || 0,
+      completedJobs: Number(worker.completedJobs) || 0,
+    }));
+
+    res.status(200).json({ 
+      message: "Top workers fetched successfully", 
+      data: transformedData 
+    });
+  } catch (error) {
+    console.error("Error fetching top workers:", error);
+    res.status(500).json({ error: "Failed to fetch top workers" });
   }
 };

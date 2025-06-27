@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@civic/auth/react";
 import { useJobTracking } from "@/lib/jobTracking";
+import socketManager from "@/lib/socket";
 import LiveTrackingMap from "../components/LiveTrackingMap";
 import EnhancedTrackingDisplay from "../components/EnhancedTrackingDisplay";
 import {
@@ -49,7 +50,11 @@ const JobTrackingPage: React.FC = () => {
 
     // Join user room for job updates
     if (user.id) {
-      // This will be handled by the socket manager
+      const socket = socketManager.getSocket();
+      if (socket && socket.connected) {
+        console.log("🏠 [JOB_TRACKING_PAGE] Joining user room:", user.id);
+        socket.emit("join_user_room", { userId: user.id });
+      }
     }
   }, [user, router, connectSocket]);
 

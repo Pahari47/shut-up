@@ -8,6 +8,7 @@ import {
   doublePrecision,
   pgEnum,
   date,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 export const genderEnum = pgEnum("gender", ["male", "female", "not_specified"]);
@@ -18,6 +19,7 @@ export const jobStatusEnum = pgEnum("job_status", [
   "in_progress",
   "completed",
   "cancelled",
+  "no_workers_found",
 ]);
 
 export const paymentStatusEnum = pgEnum("payment_status", [
@@ -85,6 +87,8 @@ export const workers = pgTable("workers", {
   gender: genderEnum("gender").default("not_specified"),
   experienceYears: integer("experience_years").default(0),
   panCard: varchar("pan_card", { length: 15 }),
+  isActive: boolean("is_active").default(false),
+  lastActiveAt: timestamp("last_active_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -96,6 +100,8 @@ export const specializations = pgTable("specializations", {
     .notNull(),
   category: varchar("name", { length: 100 }).notNull(),
   subCategory: varchar("sub_category", { length: 100 }),
+  proficiency: integer("proficiency").default(1), // 1-5 scale
+  isPrimary: boolean("is_primary").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -118,7 +124,7 @@ export const jobs = pgTable("jobs", {
     .notNull(),
   workerId: uuid("worker_id").references(() => workers.id),
   description: text("description"),
-  location: text("address"),
+  address: text("address"),
   lat: doublePrecision("lat").notNull(),
   lng: doublePrecision("lng").notNull(),
   status: jobStatusEnum("status").default("pending"),

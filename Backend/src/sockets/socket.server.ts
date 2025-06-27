@@ -9,7 +9,7 @@ export const initSocketServer = (server: any) => {
   console.log("🔌 [SOCKET_SERVER] Initializing Socket.IO server...");
 
   io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] },
+    cors: { origin: "*", methods: ["GET", "POST"] },  
   });
 
   console.log("✅ [SOCKET_SERVER] Socket.IO server created with CORS enabled");

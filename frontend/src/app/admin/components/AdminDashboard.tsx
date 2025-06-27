@@ -46,21 +46,21 @@ const UserMap = dynamic(() => import('./UserMap'), {
 });
   
 const mockData = {
-    totalRevenue: 125000,
-    platformRevenue: 12500,
-    avgJobValue: 534,
-    activeJobs: 18,
-    userGrowth: 15,
-    workerGrowth: 8,
-    customerSatisfaction: 92,
-    jobCompletionRate: 98,
-    totalWorkers: 45,
+    totalRevenue: 8300, // ₹12.5 Lakhs
+    platformRevenue: 830, // ₹1.25 Lakhs (10% commission)
+    avgJobValue: 300, // ₹2,500 average job value
+    activeJobs: 11,
+    userGrowth: 80,
+    workerGrowth: 60,
+    customerSatisfaction: 12,
+    jobCompletionRate: 7,
+    totalWorkers: 4,
     topWorkers: [
-      { name: 'John Doe', income: 15000, orders: 45, rating: 4.9, completionRate: 99 },
-      { name: 'Jane Smith', income: 14200, orders: 42, rating: 4.8, completionRate: 97 },
-      { name: 'Mike Johnson', income: 13800, orders: 38, rating: 4.8, completionRate: 96 },
-      { name: 'Sarah Wilson', income: 13200, orders: 35, rating: 4.7, completionRate: 98 },
-      { name: 'David Brown', income: 12800, orders: 32, rating: 4.9, completionRate: 100 }
+      { name: 'John Doe', income: 75000, orders: 45, rating: 4.9, completionRate: 99 },
+      { name: 'Jane Smith', income: 68000, orders: 42, rating: 4.8, completionRate: 97 },
+      { name: 'Mike Johnson', income: 62000, orders: 38, rating: 4.8, completionRate: 96 },
+      { name: 'Sarah Wilson', income: 58000, orders: 35, rating: 4.7, completionRate: 98 },
+      { name: 'David Brown', income: 54000, orders: 32, rating: 4.9, completionRate: 100 }
     ],
     complaints: [
       { id: 1, workerName: 'Mike Johnson', issue: 'Late arrival', status: 'Resolved' as const, date: '2024-07-15', priority: 'Low' },
@@ -68,12 +68,12 @@ const mockData = {
       { id: 3, workerName: 'Patricia White', issue: 'Equipment damage', status: 'Under Review' as const, date: '2024-07-13', priority: 'Medium' }
     ],
     monthlyRevenue: [
-        { month: 'Jan', revenue: 85000 },
-        { month: 'Feb', revenue: 95000 },
-        { month: 'Mar', revenue: 110000 },
-        { month: 'Apr', revenue: 105000 },
-        { month: 'May', revenue: 120000 },
-        { month: 'Jun', revenue: 125000 }
+        { month: 'Jan', revenue: 850000 },
+        { month: 'Feb', revenue: 950000 },
+        { month: 'Mar', revenue: 1100000 },
+        { month: 'Apr', revenue: 1050000 },
+        { month: 'May', revenue: 1200000 },
+        { month: 'Jun', revenue: 1250000 }
     ],
   };
 
@@ -183,9 +183,9 @@ const MainContent = ({ data, isLoading, loginView, setLoginView }: {
             </motion.div>
             
             <motion.div className={styles.metricsGrid} variants={containerVariants}>
-                <Metric title="Total Revenue" value={`$${data.totalRevenue.toLocaleString()}`} change="+12.5%"/>
-                <Metric title="Platform Revenue" value={`$${data.platformRevenue.toLocaleString()}`} change="+10.2%"/>
-                <Metric title="Avg. Job Value" value={`$${data.avgJobValue.toLocaleString()}`} change="-1.8%"/>
+                <Metric title="Total Revenue" value={`₹${data.totalRevenue.toLocaleString()}`} change="+12.5%"/>
+                <Metric title="Platform Revenue" value={`₹${data.platformRevenue.toLocaleString()}`} change="+10.2%"/>
+                <Metric title="Avg. Job Value" value={`₹${data.avgJobValue.toLocaleString()}`} change="+1.8%"/>
                 <Metric title="Active Jobs" value={data.activeJobs} />
             </motion.div>
 
@@ -204,7 +204,7 @@ const MainContent = ({ data, isLoading, loginView, setLoginView }: {
                   <h2 className={styles.cardTitle}>Top Performers</h2>
                   <a href="#" className={styles.viewAllLink}>View all</a>
                 </div>
-                <TopWorkersChart data={data.topWorkers} />
+                <TopWorkersChart />
               </motion.div>
 
               <motion.div className={`${styles.card} ${styles.growthCard}`} variants={itemVariants}>
@@ -288,7 +288,7 @@ const MainContent = ({ data, isLoading, loginView, setLoginView }: {
                     ).month
                   }</li>
                   <li><strong>Most Active Worker:</strong> {data.topWorkers[0].name}</li>
-                  <li><strong>Highest Job Value:</strong> ${data.avgJobValue * 2}</li>
+                  <li><strong>Highest Job Value:</strong> ₹{(data.avgJobValue * 2).toLocaleString()}</li>
                   <li><strong>Open Complaints:</strong> {data.complaints.length}</li>
                 </ul>
               </motion.div>

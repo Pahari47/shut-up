@@ -6,7 +6,7 @@ import { users } from "@/db/schema";
 import { jobSchema } from "@/types/validation";
 import { eq } from "drizzle-orm";
 import { parse } from "dotenv";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 import {
   redisPub,
   isRedisConnected,
@@ -23,8 +23,12 @@ export const createJob = async (req: Request, res: Response) => {
       JSON.stringify(req.body, null, 2)
     );
 
+    // Extend schema to include optional specialization
     const parsedData = jobSchema
       .omit({ id: true, createdAt: true })
+      .extend({
+        specialization: z.string().optional(),
+      })
       .parse(req.body);
 
     console.log("✅ [JOB_CREATION] Data validation passed");
@@ -47,9 +51,10 @@ export const createJob = async (req: Request, res: Response) => {
 
     console.log("✅ [JOB_CREATION] User verified:", existingUser[0].email);
 
-    // Convert bookedFor string to Date object
+    // Add specialization and convert bookedFor to Date
     const jobData = {
       ...parsedData,
+      specialization: parsedData.specialization || null,
       bookedFor: parsedData.bookedFor ? new Date(parsedData.bookedFor) : null,
     };
 
@@ -69,11 +74,8 @@ export const createJob = async (req: Request, res: Response) => {
 
     // Broadcast the job to nearby workers through Redis pub/sub
     try {
-      // Ensure Redis connection is active
       if (!isRedisConnected()) {
-        console.log(
-          "🔄 [REDIS] Redis not connected, attempting to reconnect..."
-        );
+        console.log("🔄 [REDIS] Redis not connected, attempting to reconnect...");
         await ensureRedisConnection();
       }
 
@@ -99,21 +101,12 @@ export const createJob = async (req: Request, res: Response) => {
       console.log("✅ [REDIS_PUBLISH] Successfully published job to Redis");
       console.log("🎯 [BROADCAST] Job broadcasted to nearby workers");
     } catch (broadcastError) {
-      console.error(
-        "❌ [REDIS_PUBLISH] Failed to broadcast job:",
-        broadcastError
-      );
-      console.log(
-        "⚠️ [JOB_CREATION] Continuing job creation despite broadcast failure"
-      );
-
-      // Track failed broadcast
+      console.error("❌ [REDIS_PUBLISH] Failed to broadcast job:", broadcastError);
+      console.log("⚠️ [JOB_CREATION] Continuing job creation despite broadcast failure");
       broadcastMonitor.trackFailedBroadcast(createdJob.id, broadcastError);
     }
 
-    console.log(
-      "🎉 [JOB_CREATION] Job creation process completed successfully"
-    );
+    console.log("🎉 [JOB_CREATION] Job creation process completed successfully");
 
     res.status(201).json({
       message: "Job created successfully",

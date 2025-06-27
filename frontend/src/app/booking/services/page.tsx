@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@civic/auth/react";
 import { useCart } from "../cart/cartContext";
 import { getOrCreateUserByEmail } from "@/lib/userService";
+import { createJob, parseDurationToMinutes } from "@/lib/jobService";
 import {
   BookingProgress,
   ButtonLoader,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/addressService";
 import { ModernInput, ModernButton } from "@/components/ModernUI";
 import mockWorkers from './mockWorkers';
+import socketManager from "@/lib/socket";
 
 interface ServiceDetails {
   name: string;
@@ -537,22 +539,6 @@ const SERVICE_DETAILS: Record<string, ServiceDetails> = {
   },
 };
 
-// Memoized function to parse duration to minutes
-const parseDurationToMinutes = (duration: string): number => {
-  const timeMatch = duration.match(/(\d+)-(\d+)\s*(min|hour|h)/);
-  if (!timeMatch) return 60; // Default to 60 minutes
-
-  const [, minStr, maxStr, unit] = timeMatch;
-  const min = parseInt(minStr);
-  const max = parseInt(maxStr);
-
-  if (unit === "hour" || unit === "h") {
-    return Math.round(((min + max) / 2) * 60);
-  } else {
-    return Math.round((min + max) / 2);
-  }
-};
-
 const ServiceBookingPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -588,6 +574,9 @@ const ServiceBookingPage: React.FC = () => {
   const [addressLoading, setAddressLoading] = useState<boolean>(true);
   const [addressError, setAddressError] = useState<string>("");
 
+  // Location state for job creation
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+
   // Get service name from URL params
   const serviceName = searchParams.get("service");
 
@@ -600,7 +589,7 @@ const ServiceBookingPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  // Fetch address on mount
+  // Fetch address and location on mount
   useEffect(() => {
     let isMounted = true;
     setAddressLoading(true);
@@ -608,6 +597,7 @@ const ServiceBookingPage: React.FC = () => {
       .then((loc) => {
         if (isMounted) {
           setAddress(formatAddress(loc.address));
+          setUserLocation({ lat: loc.coordinates.lat, lng: loc.coordinates.lng });
           setAddressLoading(false);
         }
       })
@@ -656,6 +646,7 @@ const ServiceBookingPage: React.FC = () => {
     console.log("👤 [BOOKING] User:", user);
     console.log("💳 [BOOKING] Payment method:", selectedPaymentMethod);
     console.log("📍 [BOOKING] Address:", address);
+    console.log("📍 [BOOKING] Location:", userLocation);
 
     if (!user) {
       console.log("❌ [BOOKING] No user, attempting sign in...");
@@ -674,9 +665,15 @@ const ServiceBookingPage: React.FC = () => {
       return;
     }
 
-    if (!("geolocation" in navigator)) {
-      console.error("❌ [BOOKING] Geolocation not supported");
-      alert("Geolocation is not supported by your browser.");
+    if (!userLocation) {
+      console.error("❌ [BOOKING] No user location");
+      alert("Location is required. Please allow location access.");
+      return;
+    }
+
+    if (!address) {
+      console.error("❌ [BOOKING] No address");
+      alert("Please enter your address.");
       return;
     }
 
@@ -686,17 +683,56 @@ const ServiceBookingPage: React.FC = () => {
       setBookingStage("initiating");
 
       try {
-        // Simulate booking and assign a random worker
+        // Stage 1: Get or create user
+        setBookingStage("creating-user");
+        console.log("👤 [BOOKING] Getting/creating user...");
+        const userData = await getOrCreateUserByEmail(user.email);
+        console.log("✅ [BOOKING] User ready:", userData.id);
+
+        // Stage 2: Create job in backend
+        setBookingStage("creating-job");
+        console.log("📝 [BOOKING] Creating job in backend...");
+        
+        const jobData = {
+          userId: userData.id,
+          description: `${currentService.name} - ${currentService.description}`,
+          address: address,
+          lat: userLocation.lat,
+          lng: userLocation.lng,
+          durationMinutes: parseDurationToMinutes(currentService.duration),
+        };
+
+        console.log("📋 [BOOKING] Job data:", jobData);
+        
+        const jobResponse = await createJob(jobData);
+        console.log("✅ [BOOKING] Job created:", jobResponse.data.id);
+
+        // Join user room for job notifications
+        const socket = socketManager.getSocket();
+        if (socket && socket.connected) {
+          console.log("🏠 [BOOKING] Joining user room for notifications:", userData.id);
+          socket.emit("join_user_room", { userId: userData.id });
+        }
+
+        // Stage 3: Redirect to worker assignment
+        setBookingStage("redirecting");
+        console.log("🔄 [BOOKING] Redirecting to worker assignment...");
+        
+        // Simulate finding a worker
         const randomWorker = mockWorkers[Math.floor(Math.random() * mockWorkers.length)];
+        
         setTimeout(() => {
           setIsBookingConfirmed(false);
           setBookingStage("idle");
           setAddress("");
-          router.push(`/booking/worker-assigned?id=${randomWorker.id}`);
+          router.push(`/booking/worker-assigned?id=${jobResponse.data.id}&workerId=${randomWorker.id}`);
         }, 1500);
+
       } catch (error) {
+        console.error("❌ [BOOKING] Booking failed:", error);
         setIsBookingConfirmed(false);
         setBookingStage("idle");
+        alert(`Booking failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     }
   }, [
@@ -706,6 +742,7 @@ const ServiceBookingPage: React.FC = () => {
     currentService,
     router,
     address,
+    userLocation,
     finalPrice,
     discount,
     couponApplied,
@@ -1030,12 +1067,25 @@ const ServiceBookingPage: React.FC = () => {
                   !selectedPaymentMethod ||
                   isBookingConfirmed ||
                   addressLoading ||
-                  !address
+                  !address ||
+                  !userLocation
                 }
                 loading={isBookingConfirmed}
                 className="w-full py-4 mt-2"
               >
-                {isBookingConfirmed ? "Looking for worker near you..." : "Book Now"}
+                {isBookingConfirmed ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <span>
+                      {bookingStage === "initiating" && "Initiating booking..."}
+                      {bookingStage === "creating-user" && "Setting up your account..."}
+                      {bookingStage === "creating-job" && "Creating your job..."}
+                      {bookingStage === "redirecting" && "Finding workers near you..."}
+                    </span>
+                    <PulsingDots />
+                  </div>
+                ) : (
+                  "Book Now"
+                )}
               </ModernButton>
             </div>
           </div>

@@ -158,15 +158,13 @@ export const liveLocationSchema = z.object({
 });
 
 export const jobSchema = z.object({
-  id: z.string({ message: "Job ID is required" }),
+  id: z.string({ message: "Job ID is required" }).optional(),
 
   userId: z.string({ message: "User ID is required" }),
   workerId: z.string({ message: "Worker ID is required" }).optional(),
 
-  description: z
-    .string()
-    .min(10, { message: "Description must be at least 10 characters" }),
-  location: z.string({ message: "Location is required" }),
+  description: z.string().optional(),
+  address: z.string({ message: "Address is required" }),
 
   lat: z.number({ message: "Latitude is required" }),
   lng: z.number({ message: "Longitude is required" }),
@@ -181,19 +179,19 @@ export const jobSchema = z.object({
     .default("pending"),
 
   bookedFor: z
-    .string({
-      message: "Booking date (bookedFor) must be a valid date",
-    })
-    .optional(),
+    .string()
+    .optional()
+    .nullable()
+    .transform((val) => {
+      if (!val || val.trim() === '') return undefined;
+      return val;
+    }),
 
   durationMinutes: z
-    .number({
-      message: "Duration is required",
-    })
-    .int({ message: "Duration must be an integer" })
-    .positive({ message: "Duration must be a positive number" }),
+    .number()
+    .optional(),
 
-  createdAt: z.date({ message: "CreatedAt must be a valid date" }).optional(),
+  createdAt: z.date().optional(),
 });
 
 export const transactionSchema = z.object({

@@ -2,8 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import { useJobTracking } from "@/lib/jobTracking";
-import LiveTrackingMap from "../components/LiveTrackingMap";
-import EnhancedTrackingDisplay from "../components/EnhancedTrackingDisplay";
 import {
   FiPlay,
   FiSquare,
@@ -12,6 +10,71 @@ import {
   FiList,
   FiMaximize2,
 } from "react-icons/fi";
+
+// Simple placeholder components
+const LiveTrackingMap: React.FC<{ jobId: string; className?: string }> = ({ 
+  jobId, 
+  className = "h-96" 
+}) => {
+  return (
+    <div className={`bg-gray-100 rounded-lg flex items-center justify-center ${className}`}>
+      <div className="text-center">
+        <FiMap className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+        <p className="text-gray-600">Live Tracking Map</p>
+        <p className="text-sm text-gray-500">Job ID: {jobId}</p>
+      </div>
+    </div>
+  );
+};
+
+const EnhancedTrackingDisplay: React.FC = () => {
+  const { currentJob, assignedWorker, workerLocation, lastLocationUpdate } = useJobTracking();
+  
+  return (
+    <div className="bg-white rounded-lg shadow p-6">
+      <h3 className="text-lg font-semibold mb-4">Tracking Information</h3>
+      
+      <div className="space-y-4">
+        <div>
+          <h4 className="font-medium text-gray-700">Current Job</h4>
+          <p className="text-sm text-gray-600">
+            {currentJob ? currentJob.description : "No active job"}
+          </p>
+        </div>
+        
+        <div>
+          <h4 className="font-medium text-gray-700">Assigned Worker</h4>
+          <p className="text-sm text-gray-600">
+            {assignedWorker 
+              ? `${assignedWorker.firstName} ${assignedWorker.lastName}`
+              : "No worker assigned"
+            }
+          </p>
+        </div>
+        
+        <div>
+          <h4 className="font-medium text-gray-700">Worker Location</h4>
+          <p className="text-sm text-gray-600">
+            {workerLocation 
+              ? `Lat: ${workerLocation.lat.toFixed(6)}, Lng: ${workerLocation.lng.toFixed(6)}`
+              : "Location not available"
+            }
+          </p>
+        </div>
+        
+        <div>
+          <h4 className="font-medium text-gray-700">Last Update</h4>
+          <p className="text-sm text-gray-600">
+            {lastLocationUpdate 
+              ? new Date(lastLocationUpdate).toLocaleString()
+              : "No updates yet"
+            }
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const TestTrackingPage: React.FC = () => {
   const {
@@ -44,7 +107,7 @@ const TestTrackingPage: React.FC = () => {
   const testJobData = {
     userId: "test-user-123",
     description: "Test Service - Plumbing Repair",
-    location: "123 Test Street, Test City",
+    address: "123 Test Street, Test City",
     lat: 22.5726,
     lng: 88.3639,
     bookedFor: new Date(Date.now() + 3600000).toISOString(), // 1 hour from now

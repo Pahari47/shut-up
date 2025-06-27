@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@civic/auth/react";
 import { useJobTracking } from "@/lib/jobTracking";
+import socketManager from "@/lib/socket";
 import LiveTrackingMap from "../components/LiveTrackingMap";
 import EnhancedTrackingDisplay from "../components/EnhancedTrackingDisplay";
 import {
@@ -40,6 +41,15 @@ const TrackingDashboard: React.FC = () => {
 
     // Connect to socket for real-time updates
     connectSocket();
+
+    // Join user room for job updates
+    if (user.id) {
+      const socket = socketManager.getSocket();
+      if (socket && socket.connected) {
+        console.log("🏠 [TRACKING_DASHBOARD] Joining user room:", user.id);
+        socket.emit("join_user_room", { userId: user.id });
+      }
+    }
   }, [user, router, connectSocket]);
 
   // Handle fullscreen toggle

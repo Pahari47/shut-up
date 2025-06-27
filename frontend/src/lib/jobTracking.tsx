@@ -14,7 +14,7 @@ export interface Job {
   userId: string;
   workerId?: string;
   description: string;
-  location: string;
+  address: string;
   lat: number;
   lng: number;
   status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled";
@@ -96,39 +96,43 @@ export const JobTrackingProvider = ({ children }: { children: ReactNode }) => {
     const socket = socketManager.getSocket();
     if (!socket) return;
 
+    // Join user room for job updates
+    socket.on("connect", () => {
+      // This will be handled by the socket manager
+    });
+
     // Job accepted by worker
-    socket.on(
-      "job_accepted",
-      (data: { job: Job; worker: Worker; trackingEnabled: boolean }) => {
-        console.log("✅ Job accepted by worker:", data);
-        setCurrentJob(data.job);
-        setAssignedWorker(data.worker);
-        setIsJobAccepted(true);
-        setIsTrackingActive(data.trackingEnabled);
-        setError(null);
-      }
-    );
+    socket.on("job_accepted", (data: { job: Job; worker: Worker; trackingEnabled: boolean }) => {
+      console.log("✅ Job accepted by worker:", data.worker);
+      setCurrentJob(data.job);
+      setAssignedWorker(data.worker);
+      setIsJobAccepted(true);
+      setIsTrackingActive(data.trackingEnabled);
+      setError(null);
+    });
 
     // Worker location updates
-    socket.on("worker_location_update", (data: LocationUpdate) => {
+    socket.on("worker_location_update", (data: {
+      jobId: string;
+      workerId: string;
+      lat: number;
+      lng: number;
+      timestamp: string;
+    }) => {
       console.log("📍 Worker location update:", data);
       setWorkerLocation({ lat: data.lat, lng: data.lng });
       setLastLocationUpdate(data.timestamp);
+      setIsTrackingActive(true);
     });
 
     // Job completed
-    socket.on(
-      "job_completed_success",
-      (data: { job: Job; trackingStopped: boolean }) => {
-        console.log("✅ Job completed:", data);
-        setCurrentJob(data.job);
-        setIsTrackingActive(!data.trackingStopped);
-        if (data.trackingStopped) {
-          setWorkerLocation(null);
-          setLastLocationUpdate(null);
-        }
-      }
-    );
+    socket.on("job_completed_success", (data: { job: Job; trackingStopped: boolean }) => {
+      console.log("✅ Job completed:", data.job);
+      setCurrentJob(data.job);
+      setIsTrackingActive(false);
+      setWorkerLocation(null);
+      setLastLocationUpdate(null);
+    });
 
     // Job errors
     socket.on("job_error", (data: { message: string }) => {
@@ -158,6 +162,22 @@ export const JobTrackingProvider = ({ children }: { children: ReactNode }) => {
       socket.off("location_error");
       socket.off("tracking_stopped");
     };
+  }, []);
+
+  // Join user room when user is available
+  useEffect(() => {
+    const socket = socketManager.getSocket();
+    if (socket && socket.connected) {
+      // Get user ID from localStorage or context
+      const userProfile = localStorage.getItem("userProfile");
+      if (userProfile) {
+        const user = JSON.parse(userProfile);
+        if (user.id) {
+          console.log("🏠 [JOB_TRACKING] Joining user room:", user.id);
+          socket.emit("join_user_room", { userId: user.id });
+        }
+      }
+    }
   }, []);
 
   // Create a new job

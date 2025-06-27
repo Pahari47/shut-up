@@ -53,15 +53,21 @@ export default function ProfilePage() {
         setError(null);
         try {
           const email = user.email ?? '';
+          console.log('🔍 [PROFILE] Loading profile for email:', email);
           
           // First try to get user by email from localStorage or generate new ID
           let userId = localStorage.getItem('userId');
+          console.log('🔍 [PROFILE] Stored userId:', userId);
           
           if (userId) {
             // Try to get user by ID first
+            console.log('🔍 [PROFILE] Attempting to fetch user by ID:', userId);
             const response = await fetch(`http://localhost:5000/api/v1/users/${userId}`);
+            console.log('🔍 [PROFILE] Response status:', response.status);
+            
             if (response.ok) {
               const userData = await response.json();
+              console.log('🔍 [PROFILE] User data fetched by ID:', userData);
               setProfile({
                 id: userData.id,
                 firstName: userData.firstName || '',
@@ -76,16 +82,23 @@ export default function ProfilePage() {
                 zipCode: userData.zipCode || undefined,
               });
               return;
+            } else {
+              console.log('🔍 [PROFILE] Failed to fetch user by ID, trying email search');
             }
           }
           
           // If no user found by ID, try to find by email in all users
+          console.log('🔍 [PROFILE] Fetching all users to search by email');
           const allUsersResponse = await fetch('http://localhost:5000/api/v1/users');
+          console.log('🔍 [PROFILE] All users response status:', allUsersResponse.status);
+          
           if (allUsersResponse.ok) {
             const allUsers = await allUsersResponse.json();
+            console.log('🔍 [PROFILE] Total users found:', allUsers.length);
             const existingUser = allUsers.find((u: any) => u.email === email);
             
             if (existingUser) {
+              console.log('🔍 [PROFILE] Found existing user by email:', existingUser);
               // Store the existing user ID
               localStorage.setItem('userId', existingUser.id);
               setProfile({
@@ -102,10 +115,17 @@ export default function ProfilePage() {
                 zipCode: existingUser.zipCode || undefined,
               });
               return;
+            } else {
+              console.log('🔍 [PROFILE] No existing user found by email');
             }
+          } else {
+            console.error('🔍 [PROFILE] Failed to fetch all users:', allUsersResponse.status, allUsersResponse.statusText);
+            const errorText = await allUsersResponse.text();
+            console.error('🔍 [PROFILE] Error response:', errorText);
           }
           
           // If no existing user found, initialize with auth email
+          console.log('🔍 [PROFILE] Initializing new profile with auth email');
           setProfile(prev => ({
             ...prev,
             email: user.email || '',
@@ -113,8 +133,8 @@ export default function ProfilePage() {
           }));
           
         } catch (error) {
-          console.error('Error loading profile:', error);
-          setError('Failed to load profile. Please try again.');
+          console.error('❌ [PROFILE] Error loading profile:', error);
+          setError(`Failed to load profile: ${error instanceof Error ? error.message : 'Network error'}`);
         } finally {
           setIsLoading(false);
         }
@@ -513,7 +533,7 @@ export default function ProfilePage() {
                 <input
                   type="number"
                   value={profile.zipCode || ''}
-                  onChange={(e) => handleInputChange('zipCode', parseInt(e.target.value) || undefined)}
+                  onChange={(e) => handleInputChange('zipCode', e.target.value ? parseInt(e.target.value) : 0)}
                   disabled={!isEditing}
                   className={`w-full px-3 py-2 border rounded-md ${
                     isEditing 
