@@ -38,15 +38,22 @@ export const createWorker = async (req: Request, res: Response) => {
 };
 
 //  Get All Workers
-export const getAllWorkers = async (_req: Request, res: Response) => {
+export const getAllWorkers = async (req: Request, res: Response) => {
   try {
-    const allWorkers = await db.select().from(workers);
-    res.status(200).json({ data: allWorkers });
+    const { email } = req.query;
+    
+    if (email) {
+      // Filter by email
+      const workersByEmail = await db.select().from(workers).where(eq(workers.email, email as string));
+      res.status(200).json({ data: workersByEmail });
+    } else {
+      // Get all workers
+      const allWorkers = await db.select().from(workers);
+      res.status(200).json({ data: allWorkers });
+    }
   } catch (error) {
     console.error("Error fetching workers:", error);
-
     res.status(500).json({ error: "Failed to fetch workers" });
-    return;
   }
 };
 

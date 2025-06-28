@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import styles from "./dashboard.module.css";
 import { useUser } from "@civic/auth/react";
 import { PageLoadAnimation, PulsingDots } from "@/components/LoadingAnimations";
 import "leaflet/dist/leaflet.css";
+import JobRequestCard from "./jobRequestCard";
 import {
   FiUser,
   FiLogOut,
@@ -60,6 +61,7 @@ export default function WorkerDashboardPage() {
     isEditingGoal,
     goalInput,
     profile,
+    workerId,
     
     // Handlers
     toggleTheme,
@@ -76,6 +78,7 @@ export default function WorkerDashboardPage() {
   // Active job UI state
   const isJobIncoming = jobStatus === "incoming" && jobRequest;
   const isJobAccepted = jobStatus === "accepted" && jobRequest;
+  const [showJobRequests, setShowJobRequests] = useState(false);
 
   // Format time helper function (kept inline as requested)
   const formatTime = (totalSeconds: number) => {
@@ -139,6 +142,25 @@ export default function WorkerDashboardPage() {
         </div>
       )}
 
+      {showJobRequests && jobRequest && (
+        <JobRequestCard
+          job={jobRequest}
+          onAccept={handleAcceptJob}
+          onDecline={handleDeclineJob}
+          onClose={() => setShowJobRequests(false)}
+        />
+      )}
+
+      {/* Debug info */}
+      {showJobRequests && !jobRequest && (
+        <div style={{ position: 'fixed', top: '50%', left: '50%', background: 'white', padding: '20px', border: '1px solid black', zIndex: 1000 }}>
+          <p>Debug: showJobRequests is true but jobRequest is null</p>
+          <p>jobStatus: {jobStatus}</p>
+          <p>isLive: {isLive.toString()}</p>
+          <button onClick={() => setShowJobRequests(false)}>Close</button>
+        </div>
+      )}
+
       {/* Main Dashboard */}
       <div className={styles.pageWrapper}>
         <div className={styles.dashboardContainer}>
@@ -151,9 +173,9 @@ export default function WorkerDashboardPage() {
                 className={`${styles.iconButton} ${styles.goLiveButton} ${
                   isLive ? styles.live : ""
                 }`}
-                onClick={() => user?.id && toggleLiveStatus(user.id)}
+                onClick={toggleLiveStatus}
                 title={isLive ? "Go Offline" : "Go Live"}
-                disabled={!user?.id}
+                disabled={!workerId}
               >
                 <FiRadio />
               </button>
@@ -161,6 +183,11 @@ export default function WorkerDashboardPage() {
               <button
                 className={styles.iconButton}
                 title="Notifications"
+                onClick={() => {
+                  console.log('Notification clicked, jobRequest:', jobRequest);
+                  console.log('showJobRequests will be:', !showJobRequests);
+                  setShowJobRequests(true);
+                }}
                 disabled={!isLive || jobStatus !== "idle"}
               >
                 <FiBell />
@@ -335,8 +362,8 @@ export default function WorkerDashboardPage() {
                     {!isLive && (
                       <button
                         className={`${styles.jobButton} ${styles.goLiveCardButton}`}
-                        onClick={() => user?.id && toggleLiveStatus(user.id)}
-                        disabled={!user?.id}
+                        onClick={toggleLiveStatus}
+                        disabled={!workerId}
                       >
                         <FiRadio /> Go Live
                       </button>

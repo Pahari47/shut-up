@@ -25,6 +25,7 @@ export const useWorkerDashboard = () => {
   const [goalInput, setGoalInput] = useState('2000');
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [profile, setProfile] = useState({ firstName: 'Worker', imageUrl: null });
+  const [workerId, setWorkerId] = useState<string | null>(null);
 
   // Fetch worker profile
   const fetchWorkerProfile = useCallback(async (workerId: string) => {
@@ -41,6 +42,22 @@ export const useWorkerDashboard = () => {
     }
   }, []);
 
+  const fetchWorkerId = useCallback(async (userEmail: string) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/v1/workers?email=${encodeURIComponent(userEmail)}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data && data.data.length > 0) {
+          return data.data[0].id; // Database worker ID
+        }
+      }
+      throw new Error('Worker not found');
+    } catch (error) {
+      console.error('Failed to fetch worker ID:', error);
+      return null;
+    }
+  }, []);
+
   // Toggle theme
   const toggleTheme = useCallback(() => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -50,9 +67,47 @@ export const useWorkerDashboard = () => {
   }, [theme]);
 
   // Toggle live status
-  const toggleLiveStatus = useCallback(async (workerId: string) => {
+  const toggleLiveStatus = useCallback(async () => {
+    if (!workerId) {
+      console.error('Worker ID not available');
+      return;
+    }
+    
     const newStatus = !isLive;
     try {
+      // Get current location first
+      if (newStatus) {
+        setLocationError(null);
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
+        });
+        
+        const newLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        
+        setLocation(newLocation);
+        
+        // Save location to liveLocations table
+        try {
+          await fetch(`http://localhost:5000/api/v1/live-locations`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              workerId: workerId,
+              lat: newLocation.lat,
+              lng: newLocation.lng,
+            })
+          });
+          console.log('✅ Location saved to database');
+        } catch (locationError) {
+          console.error('Failed to save location:', locationError);
+        }
+      }
+
       // API call to update availability
       const response = await fetch(`http://localhost:5000/api/v1/workers/${workerId}/availability`, {
         method: 'PATCH',
@@ -70,28 +125,14 @@ export const useWorkerDashboard = () => {
 
       setIsLive(newStatus);
       
-      // Start/stop location tracking
-      if (newStatus) {
-        setLocationError(null);
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            setLocation({
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
-            });
-          },
-          (error) => {
-            console.error('Error getting location:', error);
-            setLocationError('Could not get location. Please enable location services.');
-            setIsLive(false);
-          },
-          { enableHighAccuracy: true }
-        );
-      }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating availability:', error);
+      if (error.message?.includes('getCurrentPosition')) {
+        setLocationError('Could not get location. Please enable location services.');
+        setIsLive(false);
+      }
     }
-  }, [isLive, location]);
+  }, [isLive, location, workerId]);
 
   // Handle incoming job
   const handleNewJobBroadcast = useCallback((jobData: any) => {
@@ -128,13 +169,13 @@ export const useWorkerDashboard = () => {
 
   // Accept job
   const handleAcceptJob = useCallback(() => {
-    if (!jobRequest || !user?.id) return;
+    if (!jobRequest || !workerId) return;
 
     const socket = socketManager.getSocket();
     if (socket) {
       socket.emit('accept_job', {
         jobId: jobRequest.id,
-        workerId: user.id,
+        workerId: workerId,
       });
     }
 
@@ -146,17 +187,17 @@ export const useWorkerDashboard = () => {
         jobRequest.clientLocation
       ]);
     }
-  }, [jobRequest, user?.id, location]);
+  }, [jobRequest, workerId, location]);
 
   // Decline job
   const handleDeclineJob = useCallback(() => {
-    if (!jobRequest || !user?.id) return;
+    if (!jobRequest || !workerId) return;
 
     const socket = socketManager.getSocket();
     if (socket) {
       socket.emit('decline_job', {
         jobId: jobRequest.id,
-        workerId: user.id,
+        workerId: workerId,
         reason: 'Worker declined',
       });
     }
@@ -165,7 +206,7 @@ export const useWorkerDashboard = () => {
     setJobStatus('idle');
     setJobRequest(null);
     setRoute(null);
-  }, [jobRequest, user?.id]);
+  }, [jobRequest, workerId]);
 
   // Complete job
   const handleCompleteJob = useCallback(() => {
@@ -193,18 +234,41 @@ export const useWorkerDashboard = () => {
 
   // Initialize socket connection
   useEffect(() => {
+    if (workerId) {
+      const socket = socketManager.getSocket();
+      if (socket) {
+        console.log('🔌 Joining worker room:', workerId);
+        socket.emit('join_worker_room', { workerId });
+        console.log('✅ Worker room join request sent');
+      } else {
+        console.log('❌ Socket not available for worker room join');
+      }
+    }
+  }, [workerId]);
+
+  // Initialize socket connection
+  useEffect(() => {
     if (!user?.id) return;
 
     const socket = socketManager.getSocket();
-    if (!socket) return;
+    if (!socket) {
+      console.log('❌ Socket not available for event listeners');
+      return;
+    }
 
-    socket.on('new_job_broadcast', handleNewJobBroadcast);
+    console.log('🔌 Setting up socket event listeners');
+    socket.on('new_job_broadcast', (jobData) => {
+      console.log('📨 Received job broadcast:', jobData);
+      handleNewJobBroadcast(jobData);
+    });
     socket.on('job_accepted_success', () => {
+      console.log('✅ Job accepted successfully');
       setJobStatus('accepted');
       setJobRequest(null);
     });
 
     return () => {
+      console.log('🔌 Cleaning up socket event listeners');
       socket.off('new_job_broadcast', handleNewJobBroadcast);
       socket.off('job_accepted_success');
     };
@@ -227,6 +291,17 @@ export const useWorkerDashboard = () => {
     router.push('/');
   }, [router]);
 
+  useEffect(() => {
+    if (!user?.email) return;
+    
+    fetchWorkerId(user.email).then((dbWorkerId) => {
+      if (dbWorkerId) {
+        setWorkerId(dbWorkerId);
+        fetchWorkerProfile(dbWorkerId); // Update profile fetch too
+      }
+    });
+  }, [user?.email, fetchWorkerId, fetchWorkerProfile]);
+
   return {
     // State
     theme,
@@ -246,6 +321,7 @@ export const useWorkerDashboard = () => {
     isEditingGoal,
     goalInput,
     profile,
+    workerId,
     
     // Handlers
     toggleTheme,
@@ -257,6 +333,7 @@ export const useWorkerDashboard = () => {
     setGoalInput,
     setIsEditingGoal,
     handleLogout,
-    fetchWorkerProfile
+    fetchWorkerProfile,
+    fetchWorkerId
   };
 };
