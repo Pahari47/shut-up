@@ -6,11 +6,12 @@ async function completeSetup() {
     
     // Step 1: Create a test user
     console.log('\n1️⃣ Creating test user...');
+    const now = Date.now();
     const userData = {
       firstName: "Test",
       lastName: "User", 
-      email: "testuser@example.com",
-      phoneNumber: "1234567890",
+      email: `testuser_${now}@example.com`,
+      phoneNumber: `${now}`.slice(0, 12),
       address: "Test Address",
       city: "Test City",
       lat: 22.5726,
@@ -26,8 +27,8 @@ async function completeSetup() {
     const workerData = {
       firstName: "Test",
       lastName: "Worker",
-      email: "testworker@example.com", 
-      phoneNumber: "9876543210",
+      email: `testworker_${now}@example.com`,
+      phoneNumber: `${now}98`.slice(0, 13),
       dateOfBirth: "1990-01-01",
       address: "Worker Address",
       isActive: true
@@ -94,7 +95,7 @@ async function completeSetup() {
     console.log('\n🔍 Next steps:');
     console.log('1. Start your backend server');
     console.log('2. Start your frontend');
-    console.log('3. Login as the worker (testworker@example.com)');
+    console.log('3. Login as the worker (use the printed email)');
     console.log('4. Go live in the worker dashboard');
     console.log('5. The job should be broadcasted to the worker!');
     

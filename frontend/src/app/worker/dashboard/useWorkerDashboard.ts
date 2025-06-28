@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@civic/auth/react';
 import socketManager from '@/lib/socket';
+import polyline from '@mapbox/polyline';
+
+const OPENROUTESERVICE_API_KEY = '5b3ce3597851110001cf62481ff50d5207c04a54bed84f87a78c203f'; // <-- Set your OpenRouteService API key here
 
 export const useWorkerDashboard = () => {
   const router = useRouter();
@@ -167,8 +170,71 @@ export const useWorkerDashboard = () => {
     }, 1000);
   }, []);
 
+  // Fetch route from OpenRouteService
+  const fetchRoute = async (origin: [number, number], destination: [number, number]) => {
+    try {
+      console.log('🗺️ Fetching route from OpenRouteService...');
+      console.log('Origin:', origin);
+      console.log('Destination:', destination);
+      
+      const response = await fetch(
+        `https://api.openrouteservice.org/v2/directions/driving-car`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': OPENROUTESERVICE_API_KEY,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            coordinates: [
+              [origin[1], origin[0]], // [lng, lat]
+              [destination[1], destination[0]] // [lng, lat]
+            ],
+            format: 'json'
+          })
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('🗺️ Route response:', data);
+      
+      if (data && data.routes && data.routes[0] && data.routes[0].geometry) {
+        // Decode the polyline to get coordinates
+        const polylineString = data.routes[0].geometry;
+        const routeCoords = polyline.decode(polylineString);
+        console.log('🗺️ Route coordinates count:', routeCoords.length);
+        console.log('🗺️ First 3 coordinates:', routeCoords.slice(0, 3));
+        console.log('🗺️ Last 3 coordinates:', routeCoords.slice(-3));
+        
+        // Validate coordinates before returning
+        if (routeCoords.length > 0 && routeCoords.every(coord => 
+          Array.isArray(coord) && coord.length === 2 && 
+          typeof coord[0] === 'number' && typeof coord[1] === 'number' &&
+          coord[0] >= -90 && coord[0] <= 90 && coord[1] >= -180 && coord[1] <= 180
+        )) {
+          console.log('🗺️ Route coordinates are valid, returning:', routeCoords);
+          return routeCoords;
+        } else {
+          console.log('❌ Route coordinates are invalid:', routeCoords);
+          return null;
+        }
+      }
+      
+      console.log('🗺️ No route found in response');
+      return null;
+    } catch (error) {
+      console.error('❌ Failed to fetch route:', error);
+      return null;
+    }
+  };
+
   // Accept job
-  const handleAcceptJob = useCallback(() => {
+  const handleAcceptJob = useCallback(async () => {
     if (!jobRequest || !workerId) return;
 
     const socket = socketManager.getSocket();
@@ -181,11 +247,20 @@ export const useWorkerDashboard = () => {
 
     setJobStatus('accepted');
     if (location && jobRequest) {
-      // Simulate route fetch
-      setRoute([
+      // Fetch real road route
+      const routeCoords = await fetchRoute(
         [location.lat, location.lng],
         jobRequest.clientLocation
-      ]);
+      );
+      if (routeCoords) {
+        setRoute(routeCoords);
+      } else {
+        // fallback to straight line if route fails
+        setRoute([
+          [location.lat, location.lng],
+          jobRequest.clientLocation
+        ]);
+      }
     }
   }, [jobRequest, workerId, location]);
 

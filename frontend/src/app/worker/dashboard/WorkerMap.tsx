@@ -62,6 +62,15 @@ export default function WorkerMap({
     shadowSize: [41, 41]
   }), []);
 
+  // Debug route data
+  console.log('🗺️ WorkerMap received route:', route);
+  console.log('🗺️ Route type:', typeof route);
+  console.log('🗺️ Route length:', route?.length);
+  if (route && route.length > 0) {
+    console.log('🗺️ First route coordinate:', route[0]);
+    console.log('🗺️ Last route coordinate:', route[route.length - 1]);
+  }
+
   // Add this component to handle map clicks
   function MapClickHandler({ onMapClick }: { onMapClick: (latlng: { lat: number; lng: number }) => void }) {
     useMapEvent('click', (e) => {
@@ -70,8 +79,22 @@ export default function WorkerMap({
     return null;
   }
 
+  // Guard against undefined workerPosition
+  if (!workerPosition || !Array.isArray(workerPosition) || workerPosition.length !== 2) {
+    return <div style={{ height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6' }}>
+      <p>Loading map...</p>
+    </div>;
+  }
+
+  // Create a unique key for the map to prevent reuse errors
+  const workerPosStr = Array.isArray(workerPosition) ? `${workerPosition[0]}-${workerPosition[1]}` : 'unknown';
+  const clientPosStr = clientPosition && Array.isArray(clientPosition) ? `${clientPosition[0]}-${clientPosition[1]}` : 'no-client';
+  const routeStr = route ? route.length.toString() : '0';
+  const mapKey = `${workerPosStr}-${clientPosStr}-${routeStr}`;
+
   return (
     <MapContainer 
+      key={mapKey}
       center={workerPosition} 
       zoom={15} 
       style={{ height: '100%', width: '100%' }}
