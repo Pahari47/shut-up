@@ -42,6 +42,13 @@ const WorkerMap = dynamic(() => import("./WorkerMap"), {
 export default function WorkerDashboardPage() {
   const router = useRouter();
   const { user } = useUser();
+  const [isClient, setIsClient] = useState(false);
+  
+  // Prevent hydration error by ensuring client-side only rendering
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   const {
     // State
     theme,
@@ -89,6 +96,11 @@ export default function WorkerDashboardPage() {
       .toString()
       .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
   };
+
+  // Don't render until client-side
+  if (!isClient) {
+    return <PageLoadAnimation />;
+  }
 
   return (
     <>
