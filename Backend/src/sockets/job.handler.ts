@@ -611,6 +611,13 @@ export const registerJobSocketHandlers = (socket: any) => {
     }
   });
 
+  socket.on("go_live", async ({ workerId }: { workerId: string }) => {
+    console.log("🔴 [GO_LIVE] Worker going live:", workerId);
+    // Worker joins broadcast room
+    socket.join("job_broadcast");
+    console.log("✅ [GO_LIVE] Worker joined job broadcast room");
+  });
+
   console.log(
     "✅ [SOCKET_HANDLER] Job socket handlers registered successfully"
   );

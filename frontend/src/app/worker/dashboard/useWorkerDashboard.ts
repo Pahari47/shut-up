@@ -413,6 +413,11 @@ export const useWorkerDashboard = () => {
       setJobRequest(null);
     });
 
+    socket.on("new_job", (job: any) => {
+      // Real-time job notification received
+      handleNewJobBroadcast(job);
+    });
+
     return () => {
       console.log('🔌 Cleaning up socket event listeners');
       socket.off('new_job_broadcast', handleNewJobBroadcast);
