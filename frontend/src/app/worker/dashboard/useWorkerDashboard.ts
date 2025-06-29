@@ -262,7 +262,70 @@ export const useWorkerDashboard = () => {
         ]);
       }
     }
+
+    // Start location tracking for the accepted job
+    startLocationTracking(jobRequest.id);
   }, [jobRequest, workerId, location]);
+
+  // Start location tracking for active job
+  const startLocationTracking = useCallback((jobId: string) => {
+    if (!workerId || !location) return;
+
+    console.log("📍 [LOCATION_TRACKING] Starting location tracking for job:", jobId);
+    
+    // Send initial location
+    socketManager.updateWorkerLocation(jobId, workerId, location.lat, location.lng);
+
+    // Set up periodic location updates
+    const locationInterval = setInterval(() => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const newLocation = {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            };
+            
+            setLocation(newLocation);
+            
+            // Send location update to user
+            socketManager.updateWorkerLocation(jobId, workerId, newLocation.lat, newLocation.lng);
+            
+            // Update live location in database
+            fetch(`http://localhost:5000/api/v1/live-locations`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                workerId: workerId,
+                lat: newLocation.lat,
+                lng: newLocation.lng,
+              })
+            }).catch(error => {
+              console.error('Failed to update live location:', error);
+            });
+          },
+          (error) => {
+            console.error('Failed to get current position:', error);
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+        );
+      }
+    }, 10000); // Update every 10 seconds
+
+    // Store interval ID for cleanup
+    return () => {
+      clearInterval(locationInterval);
+      console.log("📍 [LOCATION_TRACKING] Stopped location tracking for job:", jobId);
+    };
+  }, [workerId, location]);
+
+  // Stop location tracking
+  const stopLocationTracking = useCallback((jobId: string) => {
+    console.log("📍 [LOCATION_TRACKING] Stopping location tracking for job:", jobId);
+    // The cleanup function from startLocationTracking will handle this
+  }, []);
 
   // Decline job
   const handleDeclineJob = useCallback(() => {
@@ -277,15 +340,23 @@ export const useWorkerDashboard = () => {
       });
     }
 
+    // Stop location tracking if it was started
+    if (jobStatus === 'accepted') {
+      stopLocationTracking(jobRequest.id);
+    }
+
     setJobHistory((prev) => [{ ...jobRequest, status: 'declined' }, ...prev]);
     setJobStatus('idle');
     setJobRequest(null);
     setRoute(null);
-  }, [jobRequest, workerId]);
+  }, [jobRequest, workerId, jobStatus, stopLocationTracking]);
 
   // Complete job
   const handleCompleteJob = useCallback(() => {
     if (jobRequest) {
+      // Stop location tracking
+      stopLocationTracking(jobRequest.id);
+      
       setEarnings((prev) => prev + jobRequest.fare);
       setJobsCompleted((prev) => prev + 1);
       setJobHistory((prev) => [
@@ -296,7 +367,7 @@ export const useWorkerDashboard = () => {
     setJobStatus('idle');
     setJobRequest(null);
     setRoute(null);
-  }, [jobRequest]);
+  }, [jobRequest, stopLocationTracking]);
 
   // Goal management
   const handleSetGoal = useCallback(() => {

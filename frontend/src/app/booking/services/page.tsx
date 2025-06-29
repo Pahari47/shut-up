@@ -725,7 +725,13 @@ const ServiceBookingPage: React.FC = () => {
           setIsBookingConfirmed(false);
           setBookingStage("idle");
           setAddress("");
-          router.push(`/booking/worker-assigned?id=${jobResponse.data.id}&workerId=${randomWorker.id}`);
+          
+          if (userData?.id) {
+            router.push(`/booking/worker-assigned?jobId=${jobResponse.data.id}&userId=${userData.id}`);
+          } else {
+            console.error("❌ [BOOKING] User data not available for navigation");
+            alert("Error: User data not found. Please try again.");
+          }
         }, 1500);
 
       } catch (error) {

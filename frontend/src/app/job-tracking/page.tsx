@@ -3,10 +3,9 @@
 import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@civic/auth/react";
-import { useJobTracking } from "@/lib/jobTracking";
+import { useJobTrackingContext } from "@/lib/jobTracking";
 import socketManager from "@/lib/socket";
-import LiveTrackingMap from "../components/LiveTrackingMap";
-import EnhancedTrackingDisplay from "../components/EnhancedTrackingDisplay";
+import LiveTrackingMap from "@/components/ui/LiveTrackingMap";
 import {
   FiMapPin,
   FiPhone,
@@ -16,6 +15,7 @@ import {
   FiAlertCircle,
   FiRefreshCw,
   FiMaximize2,
+  FiArrowLeft,
 } from "react-icons/fi";
 
 const JobTrackingPage: React.FC = () => {
@@ -33,7 +33,7 @@ const JobTrackingPage: React.FC = () => {
     connectSocket,
     error,
     clearError,
-  } = useJobTracking();
+  } = useJobTrackingContext();
 
   const [viewMode, setViewMode] = useState<"map" | "details" | "both">("both");
 
@@ -122,7 +122,7 @@ const JobTrackingPage: React.FC = () => {
                 onClick={() => router.back()}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                <FiAlertCircle className="w-5 h-5 text-gray-600" />
+                <FiArrowLeft className="w-5 h-5 text-gray-600" />
               </button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
@@ -214,16 +214,50 @@ const JobTrackingPage: React.FC = () => {
             {/* Map Section */}
             <div className="space-y-4">
               <h2 className="text-lg font-semibold text-gray-900">Live Map</h2>
-              <LiveTrackingMap jobId={currentJob.id} className="h-96" />
+              <LiveTrackingMap
+                trackingData={null}
+                userLocation={workerLocation}
+                className="h-96"
+              />
             </div>
 
-            {/* Enhanced Tracking Display */}
+            {/* Tracking Details */}
             <div className="space-y-4">
               <h2 className="text-lg font-semibold text-gray-900">
                 Tracking Details
               </h2>
-              <div className="max-h-96 overflow-y-auto">
-                <EnhancedTrackingDisplay />
+              <div className="bg-white rounded-lg shadow-lg p-6 max-h-96 overflow-y-auto">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-gray-800">Job Information</h3>
+                    <p className="text-sm text-gray-600">ID: {currentJob.id}</p>
+                    <p className="text-sm text-gray-600">Status: {currentJob.status}</p>
+                    <p className="text-sm text-gray-600">Description: {currentJob.description}</p>
+                  </div>
+                  
+                  {assignedWorker && (
+                    <div>
+                      <h3 className="font-semibold text-gray-800">Assigned Worker</h3>
+                      <p className="text-sm text-gray-600">Name: {assignedWorker.firstName} {assignedWorker.lastName}</p>
+                      <p className="text-sm text-gray-600">Phone: {assignedWorker.phoneNumber}</p>
+                      <p className="text-sm text-gray-600">Experience: {assignedWorker.experienceYears} years</p>
+                    </div>
+                  )}
+                  
+                  {workerLocation && (
+                    <div>
+                      <h3 className="font-semibold text-gray-800">Current Location</h3>
+                      <p className="text-sm text-gray-600">Latitude: {workerLocation.lat.toFixed(6)}</p>
+                      <p className="text-sm text-gray-600">Longitude: {workerLocation.lng.toFixed(6)}</p>
+                      {lastLocationUpdate && (
+                        <p className="text-sm text-gray-600">Last Update: {formatTime(lastLocationUpdate)}</p>
+                      )}
+                      {calculateETA() && (
+                        <p className="text-sm text-blue-600">ETA: ~{calculateETA()} minutes</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -233,7 +267,8 @@ const JobTrackingPage: React.FC = () => {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-900">Live Map</h2>
             <LiveTrackingMap
-              jobId={currentJob.id}
+              trackingData={null}
+              userLocation={workerLocation}
               className="h-[calc(100vh-200px)]"
             />
           </div>
@@ -244,7 +279,39 @@ const JobTrackingPage: React.FC = () => {
             <h2 className="text-lg font-semibold text-gray-900">
               Tracking Details
             </h2>
-            <EnhancedTrackingDisplay />
+            <div className="bg-white rounded-lg shadow-lg p-6">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-semibold text-gray-800">Job Information</h3>
+                  <p className="text-sm text-gray-600">ID: {currentJob.id}</p>
+                  <p className="text-sm text-gray-600">Status: {currentJob.status}</p>
+                  <p className="text-sm text-gray-600">Description: {currentJob.description}</p>
+                </div>
+                
+                {assignedWorker && (
+                  <div>
+                    <h3 className="font-semibold text-gray-800">Assigned Worker</h3>
+                    <p className="text-sm text-gray-600">Name: {assignedWorker.firstName} {assignedWorker.lastName}</p>
+                    <p className="text-sm text-gray-600">Phone: {assignedWorker.phoneNumber}</p>
+                    <p className="text-sm text-gray-600">Experience: {assignedWorker.experienceYears} years</p>
+                  </div>
+                )}
+                
+                {workerLocation && (
+                  <div>
+                    <h3 className="font-semibold text-gray-800">Current Location</h3>
+                    <p className="text-sm text-gray-600">Latitude: {workerLocation.lat.toFixed(6)}</p>
+                    <p className="text-sm text-gray-600">Longitude: {workerLocation.lng.toFixed(6)}</p>
+                    {lastLocationUpdate && (
+                      <p className="text-sm text-gray-600">Last Update: {formatTime(lastLocationUpdate)}</p>
+                    )}
+                    {calculateETA() && (
+                      <p className="text-sm text-blue-600">ETA: ~{calculateETA()} minutes</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

@@ -1,8 +1,24 @@
 "use client";
-import { useSearchParams } from "next/navigation";
-import mockWorkers from "../services/mockWorkers";
 import React, { useEffect, useState } from "react";
-import { FiMapPin, FiClock, FiPhone, FiNavigation, FiCheckCircle, FiAlertCircle } from "react-icons/fi";
+import { useSearchParams } from "next/navigation";
+import { FiMapPin, FiClock, FiPhone, FiNavigation, FiCheckCircle, FiAlertCircle, FiWifi, FiWifiOff, FiRefreshCw } from "react-icons/fi";
+import { useJobTracking } from "@/lib/jobTracking";
+import dynamic from "next/dynamic";
+import LiveTrackingMap from "@/components/ui/LiveTrackingMap";
+import socketManager from "@/lib/socket";
+
+// Dynamically import the map component to avoid SSR issues
+const LiveTrackingMapComponent = dynamic(() => import("@/components/ui/LiveTrackingMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-96 bg-gray-100 rounded-lg flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+        <p className="text-gray-600">Loading map...</p>
+      </div>
+    </div>
+  ),
+});
 
 interface Location {
   lat: number;
@@ -10,304 +26,309 @@ interface Location {
   timestamp: string;
 }
 
-interface WorkerStatus {
-  status: "on_way" | "arrived" | "working" | "completed";
-  message: string;
-  eta: number;
-}
-
-// Fallback worker data for demo
-const fallbackWorker = {
-  id: "demo-worker-123",
-  name: "Rajesh Kumar",
-  description: "Professional Plumber with 5+ years experience",
-  phoneNumber: "+91 98765 43210",
-  avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
-  address: "Kolkata, West Bengal",
-  rating: 4.8,
-  experienceYears: 5,
-  specialization: "Plumber"
-};
-
-export default function WorkerAssignedPage() {
+const WorkerAssignedPage = () => {
   const searchParams = useSearchParams();
-  const workerId = searchParams.get("id");
-  const actualWorkerId = searchParams.get("workerId");
-  const [progress, setProgress] = useState(0);
-  const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
-  const [workerStatus, setWorkerStatus] = useState<WorkerStatus>({
-    status: "on_way",
-    message: "Worker is on the way to your location",
-    eta: 15
-  });
-  const [locationHistory, setLocationHistory] = useState<Location[]>([]);
-  const [isSocketConnected, setIsSocketConnected] = useState(false);
+  const jobId = searchParams.get("jobId");
+  const userId = searchParams.get("userId");
 
-  // Try to find worker from mock data, otherwise use fallback
-  const worker = mockWorkers.find(w => String(w.id) === String(workerId || actualWorkerId)) || fallbackWorker;
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
-  // Simulate worker's journey with realistic coordinates
-  const generateWorkerJourney = () => {
-    // Starting location (worker's location)
-    const startLat = 22.5726 + (Math.random() - 0.5) * 0.01;
-    const startLng = 88.3639 + (Math.random() - 0.5) * 0.01;
-    
-    // Destination (user's location)
-    const endLat = 22.5726 + (Math.random() - 0.5) * 0.005;
-    const endLng = 88.3639 + (Math.random() - 0.5) * 0.005;
-    
-    const journey = [];
-    const steps = 20;
-    
-    for (let i = 0; i <= steps; i++) {
-      const progress = i / steps;
-      const lat = startLat + (endLat - startLat) * progress + (Math.random() - 0.5) * 0.0005;
-      const lng = startLng + (endLng - startLng) * progress + (Math.random() - 0.5) * 0.0005;
-      
-      journey.push({
-        lat,
-        lng,
-        timestamp: new Date(Date.now() + i * 30000).toISOString(), // 30 seconds apart
-        progress: progress * 100
-      });
-    }
-    
-    return journey;
-  };
+  const { trackingState, isTracking, error, startTracking, stopTracking } = useJobTracking(
+    jobId || "",
+    userId || ""
+  );
 
+  // Get user's current location
   useEffect(() => {
-    // Always show demo mode for now
-    setIsSocketConnected(false);
-    console.log("🔌 Demo mode activated - showing worker tracking simulation");
+    if (!jobId || !userId) return;
 
-    // Generate worker journey
-    const journey = generateWorkerJourney();
-    let currentStep = 0;
-
-    // Simulate real-time location updates
-    const locationInterval = setInterval(() => {
-      if (currentStep < journey.length) {
-        const location = journey[currentStep];
-        setCurrentLocation({ lat: location.lat, lng: location.lng, timestamp: location.timestamp });
-        setLocationHistory(prev => [...prev, { lat: location.lat, lng: location.lng, timestamp: location.timestamp }]);
-        setProgress(location.progress);
-        
-        // Update status based on progress
-        if (location.progress < 30) {
-          setWorkerStatus({
-            status: "on_way",
-            message: "Worker is on the way to your location",
-            eta: Math.max(1, Math.ceil((100 - location.progress) / 6))
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
           });
-        } else if (location.progress < 90) {
-          setWorkerStatus({
-            status: "on_way",
-            message: "Worker is approaching your location",
-            eta: Math.max(1, Math.ceil((100 - location.progress) / 8))
-          });
-        } else if (location.progress < 100) {
-          setWorkerStatus({
-            status: "arrived",
-            message: "Worker has arrived at your location",
-            eta: 0
-          });
-        } else {
-          setWorkerStatus({
-            status: "working",
-            message: "Worker is currently working on your job",
-            eta: 0
-          });
+        },
+        (error) => {
+          console.error("Error getting location:", error);
+          setLocationError("Unable to get your location. Please enable location services.");
         }
+      );
+    } else {
+      setLocationError("Geolocation is not supported by this browser.");
+    }
+  }, [jobId, userId]);
+
+  // Start tracking when component mounts
+  useEffect(() => {
+    if (jobId && userId && !isTracking) {
+      console.log("🚀 [WORKER_ASSIGNED] Starting tracking for job:", jobId);
+      console.log("🔌 [WORKER_ASSIGNED] Socket connection status:", socketManager.isSocketConnected());
+      
+      // Check if socket is connected before starting tracking
+      if (!socketManager.isSocketConnected()) {
+        console.warn("⚠️ [WORKER_ASSIGNED] Socket not connected, attempting to connect...");
+        socketManager.connect();
         
-        currentStep++;
-      } else {
-        clearInterval(locationInterval);
-        // Simulate job completion after some time
+        // Wait a bit for connection to establish
         setTimeout(() => {
-          setWorkerStatus({
-            status: "completed",
-            message: "Job completed successfully!",
-            eta: 0
-          });
-        }, 5000);
+          if (socketManager.isSocketConnected()) {
+            console.log("✅ [WORKER_ASSIGNED] Socket connected, starting tracking");
+            startTracking();
+          } else {
+            console.error("❌ [WORKER_ASSIGNED] Failed to connect socket");
+            setLocationError("Unable to connect to tracking service. Please check your internet connection.");
+          }
+        }, 2000);
+      } else {
+        startTracking();
       }
-    }, 3000); // Update every 3 seconds
-
-    return () => clearInterval(locationInterval);
-  }, []); // Remove worker dependency to always run
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "on_way": return "text-blue-600";
-      case "arrived": return "text-green-600";
-      case "working": return "text-orange-600";
-      case "completed": return "text-green-700";
-      default: return "text-gray-600";
     }
-  };
+  }, [jobId, userId, isTracking, startTracking]);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "on_way": return <FiNavigation className="w-5 h-5" />;
-      case "arrived": return <FiMapPin className="w-5 h-5" />;
-      case "working": return <FiClock className="w-5 h-5" />;
-      case "completed": return <FiCheckCircle className="w-5 h-5" />;
-      default: return <FiAlertCircle className="w-5 h-5" />;
-    }
-  };
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (isTracking) {
+        console.log("🛑 [WORKER_ASSIGNED] Cleaning up tracking on unmount");
+        stopTracking();
+      }
+    };
+  }, [isTracking, stopTracking]);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-2xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-gray-800">Worker Assigned</h1>
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full text-sm bg-yellow-100 text-yellow-700">
-              <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-              Demo Mode
-            </div>
-          </div>
-
-          {/* Worker Card */}
-          <div className="flex items-center gap-4">
-            <img 
-              src={worker.avatar} 
-              alt={worker.name} 
-              className="w-16 h-16 rounded-full border-4 border-blue-100" 
-            />
-            <div className="flex-1">
-              <h2 className="text-xl font-semibold text-gray-800">{worker.name}</h2>
-              <p className="text-gray-600 text-sm">{worker.description}</p>
-              <div className="flex items-center gap-4 mt-2">
-                <span className="text-gray-700 text-sm">{worker.phoneNumber}</span>
-                <a 
-                  href={`tel:${worker.phoneNumber}`} 
-                  className="bg-blue-500 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors"
-                >
-                  <FiPhone className="inline w-4 h-4 mr-1" />
-                  Call
-                </a>
-              </div>
-            </div>
+  // Handle missing parameters
+  if (!jobId || !userId) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
+          <div className="text-center">
+            <div className="text-red-500 text-6xl mb-4">⚠️</div>
+            <h1 className="text-xl font-semibold text-gray-800 mb-2">
+              Missing Information
+            </h1>
+            <p className="text-gray-600 mb-6">
+              {!jobId && !userId 
+                ? "Job ID and User ID are required to track this job."
+                : !jobId 
+                ? "Job ID is required to track this job."
+                : "User ID is required to track this job."
+              }
+            </p>
+            <button 
+              onClick={() => window.history.back()}
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Go Back
+            </button>
           </div>
         </div>
+      </div>
+    );
+  }
 
-        {/* Status Card */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className={`p-2 rounded-full ${getStatusColor(workerStatus.status)} bg-opacity-10`}>
-              {getStatusIcon(workerStatus.status)}
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => window.history.back()}
+                className="text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <h1 className="text-xl font-semibold text-gray-800">
+                Live Job Tracking
+              </h1>
             </div>
-            <div>
-              <h3 className="font-semibold text-gray-800">{workerStatus.message}</h3>
-              {workerStatus.eta > 0 && (
-                <p className="text-sm text-gray-600">ETA: {workerStatus.eta} minutes</p>
+            
+            {/* Connection Status */}
+            <div className="flex items-center space-x-4">
+              <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm ${
+                socketManager.isSocketConnected()
+                  ? "bg-green-100 text-green-800"
+                  : "bg-red-100 text-red-800"
+              }`}>
+                <div className={`w-2 h-2 rounded-full ${
+                  socketManager.isSocketConnected() ? "bg-green-500" : "bg-red-500"
+                }`}></div>
+                <span>
+                  {socketManager.isSocketConnected() ? "Connected" : "Disconnected"}
+                </span>
+              </div>
+              
+              {/* Connection Help */}
+              {!socketManager.isSocketConnected() && (
+                <button
+                  onClick={() => {
+                    console.log("🔄 [WORKER_ASSIGNED] Manual connection attempt");
+                    socketManager.connect();
+                  }}
+                  className="text-blue-600 hover:text-blue-800 text-sm underline"
+                >
+                  Reconnect
+                </button>
               )}
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Progress Bar */}
-          <div className="mb-4">
-            <div className="flex justify-between text-sm text-gray-600 mb-2">
-              <span>Progress</span>
-              <span>{Math.round(progress)}%</span>
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Connection Error Alert */}
+        {!socketManager.isSocketConnected() && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                <span className="text-red-700">
+                  Connection lost. Please check your internet connection and try reconnecting.
+                </span>
+              </div>
+              <button
+                onClick={() => socketManager.connect()}
+                className="text-red-600 hover:text-red-800 text-sm underline"
+              >
+                Reconnect
+              </button>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-3">
-              <div 
-                className="bg-gradient-to-r from-blue-500 to-green-500 h-3 rounded-full transition-all duration-1000 ease-out"
-                style={{ width: `${progress}%` }}
-              ></div>
+          </div>
+        )}
+
+        {/* Location Error Alert */}
+        {locationError && (
+          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+              <span className="text-yellow-700">{locationError}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Map Section */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+              <div className="h-96 lg:h-[600px]">
+                <LiveTrackingMap
+                  trackingData={trackingState}
+                  userLocation={userLocation}
+                  className="w-full h-full"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Current Location */}
-          {currentLocation && (
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h4 className="font-semibold text-gray-800 mb-2">Current Location</h4>
-              <div className="text-sm text-gray-600">
-                <p>Latitude: {currentLocation.lat.toFixed(6)}</p>
-                <p>Longitude: {currentLocation.lng.toFixed(6)}</p>
-                <p>Last Updated: {new Date(currentLocation.timestamp).toLocaleTimeString()}</p>
-              </div>
-            </div>
-          )}
-        </div>
+          {/* Status Panel */}
+          <div className="space-y-6">
+            {/* Job Status Card */}
+            <div className="bg-white rounded-lg shadow-lg p-6">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4">Job Status</h2>
+              
+              {trackingState ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Status:</span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      trackingState.jobStatus === "completed" ? "bg-green-100 text-green-800" :
+                      trackingState.jobStatus === "in_progress" ? "bg-blue-100 text-blue-800" :
+                      trackingState.jobStatus === "confirmed" ? "bg-yellow-100 text-yellow-800" :
+                      "bg-gray-100 text-gray-800"
+                    }`}>
+                      {trackingState.jobStatus?.replace("_", " ").toUpperCase() || "UNKNOWN"}
+                    </span>
+                  </div>
 
-        {/* Map Visualization */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <h3 className="font-semibold text-gray-800 mb-4">Live Location Tracking</h3>
-          <div className="relative w-full h-64 bg-gradient-to-br from-blue-100 to-indigo-200 rounded-lg overflow-hidden">
-            {/* Simulated Map */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <FiMapPin className="w-12 h-12 text-blue-500 mx-auto mb-2" />
-                <p className="text-gray-600 font-medium">Interactive Map</p>
-                <p className="text-gray-500 text-sm">Showing worker's real-time location</p>
-              </div>
+                  {trackingState.workerName && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Worker:</span>
+                      <span className="text-sm font-medium text-gray-800">
+                        {trackingState.workerName}
+                      </span>
+                    </div>
+                  )}
+
+                  {trackingState.workerStatus?.eta > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">ETA:</span>
+                      <span className="text-sm font-medium text-blue-600">
+                        {trackingState.workerStatus.eta} minutes
+                      </span>
+                    </div>
+                  )}
+
+                  {trackingState.currentLocation && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Last Update:</span>
+                      <span className="text-sm text-gray-500">
+                        {new Date(trackingState.currentLocation.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                  <p className="text-sm text-gray-600">Loading job details...</p>
+                </div>
+              )}
             </div>
 
-            {/* Worker Location Indicator */}
-            {currentLocation && (
-              <div 
-                className="absolute w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg animate-pulse"
-                style={{
-                  left: `${50 + (currentLocation.lat - 22.5726) * 10000}%`,
-                  top: `${50 + (currentLocation.lng - 88.3639) * 10000}%`,
-                  transform: 'translate(-50%, -50%)'
-                }}
-              >
-                <div className="w-2 h-2 bg-white rounded-full absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"></div>
+            {/* Worker Info Card */}
+            {trackingState?.workerName && (
+              <div className="bg-white rounded-lg shadow-lg p-6">
+                <h2 className="text-lg font-semibold text-gray-800 mb-4">Worker Information</h2>
+                <div className="flex items-center space-x-4">
+                  <img 
+                    src={trackingState.workerAvatar} 
+                    alt={trackingState.workerName}
+                    className="w-16 h-16 rounded-full object-cover"
+                  />
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-800">{trackingState.workerName}</h3>
+                    <p className="text-sm text-gray-600">{trackingState.workerPhone}</p>
+                    {trackingState.workerStatus && (
+                      <p className="text-sm text-blue-600 font-medium">
+                        {trackingState.workerStatus.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Location History Trail */}
-            {locationHistory.slice(-5).map((location, index) => (
-              <div
-                key={index}
-                className="absolute w-2 h-2 bg-blue-300 rounded-full opacity-50"
-                style={{
-                  left: `${50 + (location.lat - 22.5726) * 10000}%`,
-                  top: `${50 + (location.lng - 88.3639) * 10000}%`,
-                  transform: 'translate(-50%, -50%)'
-                }}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Location History */}
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h3 className="font-semibold text-gray-800 mb-4">Location History</h3>
-          <div className="space-y-2 max-h-40 overflow-y-auto">
-            {locationHistory.slice(-10).reverse().map((location, index) => (
-              <div key={index} className="flex items-center justify-between text-sm p-2 bg-gray-50 rounded">
-                <div>
-                  <span className="font-medium">Update {locationHistory.length - index}</span>
-                  <p className="text-gray-600">
-                    {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-                  </p>
+            {/* Error Display */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-red-800">
+                      Tracking Error
+                    </h3>
+                    <div className="mt-2 text-sm text-red-700">
+                      <p>{error}</p>
+                    </div>
+                  </div>
                 </div>
-                <span className="text-gray-500">
-                  {new Date(location.timestamp).toLocaleTimeString()}
-                </span>
               </div>
-            ))}
+            )}
           </div>
-        </div>
-
-        {/* Demo Info */}
-        <div className="bg-blue-50 rounded-xl p-4 mt-6">
-          <div className="flex items-center gap-2 mb-2">
-            <FiAlertCircle className="w-5 h-5 text-blue-600" />
-            <h4 className="font-semibold text-blue-800">Demo Information</h4>
-          </div>
-          <p className="text-blue-700 text-sm">
-            This is a demonstration of the worker tracking system. In a real scenario, 
-            this would show live data from the worker's device via WebSocket connection.
-          </p>
         </div>
       </div>
     </div>
   );
-} 
+};
+
+export default WorkerAssignedPage; 

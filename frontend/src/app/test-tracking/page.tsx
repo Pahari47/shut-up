@@ -1,421 +1,320 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useJobTracking } from "@/lib/jobTracking";
-import {
-  FiPlay,
-  FiSquare,
-  FiRefreshCw,
-  FiMap,
-  FiList,
-  FiMaximize2,
-} from "react-icons/fi";
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import socketManager from '@/lib/socket';
 
-// Simple placeholder components
-const LiveTrackingMap: React.FC<{ jobId: string; className?: string }> = ({ 
-  jobId, 
-  className = "h-96" 
-}) => {
-  return (
-    <div className={`bg-gray-100 rounded-lg flex items-center justify-center ${className}`}>
-      <div className="text-center">
-        <FiMap className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-        <p className="text-gray-600">Live Tracking Map</p>
-        <p className="text-sm text-gray-500">Job ID: {jobId}</p>
-      </div>
-    </div>
-  );
-};
+const TestTrackingPage = () => {
+  const router = useRouter();
+  const [testMode, setTestMode] = useState<'real' | 'test'>('test');
+  const [jobId, setJobId] = useState('');
+  const [userId, setUserId] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
 
-const EnhancedTrackingDisplay: React.FC = () => {
-  const { currentJob, assignedWorker, workerLocation, lastLocationUpdate } = useJobTracking();
-  
-  return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-lg font-semibold mb-4">Tracking Information</h3>
-      
-      <div className="space-y-4">
-        <div>
-          <h4 className="font-medium text-gray-700">Current Job</h4>
-          <p className="text-sm text-gray-600">
-            {currentJob ? currentJob.description : "No active job"}
-          </p>
-        </div>
-        
-        <div>
-          <h4 className="font-medium text-gray-700">Assigned Worker</h4>
-          <p className="text-sm text-gray-600">
-            {assignedWorker 
-              ? `${assignedWorker.firstName} ${assignedWorker.lastName}`
-              : "No worker assigned"
-            }
-          </p>
-        </div>
-        
-        <div>
-          <h4 className="font-medium text-gray-700">Worker Location</h4>
-          <p className="text-sm text-gray-600">
-            {workerLocation 
-              ? `Lat: ${workerLocation.lat.toFixed(6)}, Lng: ${workerLocation.lng.toFixed(6)}`
-              : "Location not available"
-            }
-          </p>
-        </div>
-        
-        <div>
-          <h4 className="font-medium text-gray-700">Last Update</h4>
-          <p className="text-sm text-gray-600">
-            {lastLocationUpdate 
-              ? new Date(lastLocationUpdate).toLocaleString()
-              : "No updates yet"
-            }
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
+  // Real job examples (you can replace these with actual job IDs from your database)
+  const realJobExamples = [
+    { id: '2d3d7867-69fa-46ea-a082-e8a498689996', userId: '72e7e4ca-53c8-4aab-99f2-14e297e667f3', description: 'Real Job 1' },
+    { id: 'test-real-job-2', userId: 'test-real-user-2', description: 'Real Job 2' },
+    { id: 'test-real-job-3', userId: 'test-real-user-3', description: 'Real Job 3' },
+  ];
 
-const TestTrackingPage: React.FC = () => {
-  const {
-    currentJob,
-    assignedWorker,
-    isJobAccepted,
-    isTrackingActive,
-    workerLocation,
-    lastLocationUpdate,
-    isSocketConnected,
-    connectSocket,
-    disconnectSocket,
-    createJob,
-    acceptJob,
-    updateLocation,
-    completeJob,
-    error,
-    clearError,
-  } = useJobTracking();
-
-  const [testMode, setTestMode] = useState<"simulate" | "manual">("simulate");
-  const [viewMode, setViewMode] = useState<"split" | "map" | "details">(
-    "split"
-  );
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simulationInterval, setSimulationInterval] =
-    useState<NodeJS.Timeout | null>(null);
-
-  // Test job data
-  const testJobData = {
-    userId: "test-user-123",
-    description: "Test Service - Plumbing Repair",
-    address: "123 Test Street, Test City",
-    lat: 22.5726,
-    lng: 88.3639,
-    bookedFor: new Date(Date.now() + 3600000).toISOString(), // 1 hour from now
-    durationMinutes: 120,
+  // Check connection status
+  const checkConnection = () => {
+    const isConnected = socketManager.isSocketConnected();
+    setConnectionStatus(isConnected ? 'connected' : 'disconnected');
+    return isConnected;
   };
 
-  // Simulate location updates
-  const simulateLocationUpdates = () => {
-    if (!currentJob) return;
+  // Test different scenarios
+  const testScenario = (scenario: string) => {
+    let testJobId = '';
+    let testUserId = '';
 
-    const startLat = 22.5726;
-    const startLng = 88.3639;
-    const endLat = currentJob.lat;
-    const endLng = currentJob.lng;
-
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 0.02; // Move 2% closer each update
-
-      if (progress >= 1) {
-        clearInterval(interval);
-        setIsSimulating(false);
-        setSimulationInterval(null);
-        return;
-      }
-
-      const currentLat = startLat + (endLat - startLat) * progress;
-      const currentLng = startLng + (endLng - startLng) * progress;
-
-      // Use a real worker ID if available, otherwise use a test ID
-      const workerId = assignedWorker?.id || "test-worker-456";
-      updateLocation(currentJob.id, workerId, currentLat, currentLng);
-    }, 2000); // Update every 2 seconds
-
-    setSimulationInterval(interval);
-  };
-
-  // Start simulation
-  const startSimulation = async () => {
-    try {
-      // Create a test job
-      const job = await createJob(testJobData);
-      console.log("Test job created:", job);
-
-      // Accept the job with a test worker ID
-      const testWorkerId = "test-worker-456";
-      acceptJob(job.id, testWorkerId);
-      console.log("Job accepted by test worker");
-
-      // Start location simulation
-      setIsSimulating(true);
-      simulateLocationUpdates();
-    } catch (err) {
-      console.error("Simulation failed:", err);
+    switch (scenario) {
+      case 'pending':
+        testJobId = 'test-pending-job';
+        testUserId = 'test-pending-user';
+        break;
+      case 'no_workers':
+        testJobId = 'test-no-workers-job';
+        testUserId = 'test-no-workers-user';
+        break;
+      case 'cancelled':
+        testJobId = 'test-cancelled-job';
+        testUserId = 'test-cancelled-user';
+        break;
+      case 'not_found':
+        testJobId = 'non-existent-job-id';
+        testUserId = 'non-existent-user-id';
+        break;
+      case 'unauthorized':
+        testJobId = 'test-unauthorized-job';
+        testUserId = 'wrong-user-id';
+        break;
+      default:
+        testJobId = 'test-job-123';
+        testUserId = 'test-user-456';
     }
+
+    setJobId(testJobId);
+    setUserId(testUserId);
+    setTestMode('test');
   };
 
-  // Stop simulation
-  const stopSimulation = () => {
-    if (simulationInterval) {
-      clearInterval(simulationInterval);
-      setSimulationInterval(null);
+  // Start tracking
+  const startTrackingTest = () => {
+    if (!jobId || !userId) {
+      alert('Please enter both Job ID and User ID');
+      return;
     }
-    setIsSimulating(false);
 
-    if (currentJob) {
-      const workerId = assignedWorker?.id || "test-worker-456";
-      completeJob(currentJob.id, workerId);
+    if (!checkConnection()) {
+      alert('Socket not connected. Please check backend server.');
+      return;
     }
+
+    const url = `/booking/worker-assigned?jobId=${encodeURIComponent(jobId)}&userId=${encodeURIComponent(userId)}`;
+    router.push(url);
   };
 
-  // Manual location update
-  const updateManualLocation = () => {
-    if (!currentJob) return;
-
-    const lat = 22.5726 + (Math.random() - 0.5) * 0.01;
-    const lng = 88.3639 + (Math.random() - 0.5) * 0.01;
-
-    const workerId = assignedWorker?.id || "test-worker-456";
-    updateLocation(currentJob.id, workerId, lat, lng);
+  // Test backend connection
+  const testBackendConnection = () => {
+    console.log('🧪 Testing backend connection...');
+    socketManager.testConnection();
+    
+    // Check connection status after a short delay
+    setTimeout(() => {
+      checkConnection();
+    }, 1000);
   };
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (simulationInterval) {
-        clearInterval(simulationInterval);
-      }
-    };
-  }, [simulationInterval]);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Live Tracking Test</h1>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <h1 className="text-2xl font-bold text-gray-800 mb-4">Job Tracking Test Page</h1>
+          <p className="text-gray-600 mb-4">
+            This page allows you to test different job tracking scenarios and verify the system is working correctly.
+          </p>
+          
+          {/* Connection Status */}
+          <div className="flex items-center space-x-4 mb-4">
+            <div className={`flex items-center space-x-2 px-3 py-2 rounded-full text-sm font-medium ${
+              connectionStatus === 'connected' 
+                ? 'bg-green-100 text-green-800' 
+                : 'bg-red-100 text-red-800'
+            }`}>
+              <div className={`w-3 h-3 rounded-full ${
+                connectionStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'
+              }`}></div>
+              <span>
+                Backend: {connectionStatus === 'connected' ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
+            <button
+              onClick={testBackendConnection}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              Test Connection
+            </button>
+          </div>
 
-        {/* Connection Status */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">Connection Status</h2>
-          <div className="flex items-center space-x-2 mb-4">
-            <div
-              className={`w-3 h-3 rounded-full ${
-                isSocketConnected ? "bg-green-500" : "bg-red-500"
+          {/* Instructions */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="font-semibold text-blue-800 mb-2">Instructions:</h3>
+            <ul className="text-sm text-blue-700 space-y-1">
+              <li>• Make sure your backend server is running on port 5000</li>
+              <li>• Ensure Redis server is running</li>
+              <li>• Test scenarios will simulate different job states</li>
+              <li>• Real jobs require valid job and user IDs from your database</li>
+            </ul>
+          </div>
+        </div>
+
+        {/* Test Mode Selection */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Test Mode</h2>
+          
+          <div className="flex space-x-4 mb-6">
+            <button
+              onClick={() => setTestMode('test')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                testMode === 'test'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
-            />
-            <span>{isSocketConnected ? "Connected" : "Disconnected"}</span>
-          </div>
-          <div className="flex space-x-2">
-            <button
-              onClick={connectSocket}
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
             >
-              Connect
+              Test Scenarios
             </button>
             <button
-              onClick={disconnectSocket}
-              className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
+              onClick={() => setTestMode('real')}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                testMode === 'real'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
             >
-              Disconnect
+              Real Jobs
             </button>
           </div>
-        </div>
 
-        {/* Error Display */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center justify-between">
-              <span className="text-red-700">{error}</span>
-              <button
-                onClick={clearError}
-                className="text-red-500 hover:text-red-700"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Test Controls */}
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">Test Controls</h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Simulation Mode */}
+          {testMode === 'test' ? (
             <div>
-              <h3 className="font-medium mb-3">Simulation Mode</h3>
-              <div className="space-y-2">
+              <h3 className="font-semibold text-gray-800 mb-3">Test Scenarios</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <button
-                  onClick={startSimulation}
-                  disabled={isSimulating}
-                  className={`w-full px-4 py-2 rounded flex items-center justify-center space-x-2 ${
-                    isSimulating
-                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                      : "bg-green-600 text-white hover:bg-green-700"
-                  }`}
+                  onClick={() => testScenario('normal')}
+                  className="bg-green-100 text-green-800 p-3 rounded-lg hover:bg-green-200 transition-colors text-left"
                 >
-                  <FiPlay className="w-4 h-4" />
-                  <span>
-                    {isSimulating ? "Simulating..." : "Start Simulation"}
-                  </span>
+                  <div className="font-medium">Normal Tracking</div>
+                  <div className="text-sm">Basic test with mock data</div>
                 </button>
+                
                 <button
-                  onClick={stopSimulation}
-                  disabled={!isSimulating}
-                  className={`w-full px-4 py-2 rounded flex items-center justify-center space-x-2 ${
-                    !isSimulating
-                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                      : "bg-red-600 text-white hover:bg-red-700"
-                  }`}
+                  onClick={() => testScenario('pending')}
+                  className="bg-yellow-100 text-yellow-800 p-3 rounded-lg hover:bg-yellow-200 transition-colors text-left"
                 >
-                  <FiSquare className="w-4 h-4" />
-                  <span>Stop Simulation</span>
+                  <div className="font-medium">Pending Job</div>
+                  <div className="text-sm">Job waiting for worker</div>
+                </button>
+                
+                <button
+                  onClick={() => testScenario('no_workers')}
+                  className="bg-orange-100 text-orange-800 p-3 rounded-lg hover:bg-orange-200 transition-colors text-left"
+                >
+                  <div className="font-medium">No Workers</div>
+                  <div className="text-sm">No available workers</div>
+                </button>
+                
+                <button
+                  onClick={() => testScenario('cancelled')}
+                  className="bg-red-100 text-red-800 p-3 rounded-lg hover:bg-red-200 transition-colors text-left"
+                >
+                  <div className="font-medium">Cancelled Job</div>
+                  <div className="text-sm">Job was cancelled</div>
+                </button>
+                
+                <button
+                  onClick={() => testScenario('not_found')}
+                  className="bg-gray-100 text-gray-800 p-3 rounded-lg hover:bg-gray-200 transition-colors text-left"
+                >
+                  <div className="font-medium">Job Not Found</div>
+                  <div className="text-sm">Invalid job ID</div>
+                </button>
+                
+                <button
+                  onClick={() => testScenario('unauthorized')}
+                  className="bg-purple-100 text-purple-800 p-3 rounded-lg hover:bg-purple-200 transition-colors text-left"
+                >
+                  <div className="font-medium">Unauthorized</div>
+                  <div className="text-sm">Wrong user ID</div>
                 </button>
               </div>
             </div>
-
-            {/* Manual Mode */}
+          ) : (
             <div>
-              <h3 className="font-medium mb-3">Manual Mode</h3>
-              <div className="space-y-2">
-                <button
-                  onClick={updateManualLocation}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  Update Location
-                </button>
-                <button
-                  onClick={() => {
-                    if (currentJob) {
-                      acceptJob(currentJob.id, "test-worker-456");
-                    }
-                  }}
-                  className="w-full px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700"
-                >
-                  Accept Job
-                </button>
+              <h3 className="font-semibold text-gray-800 mb-3">Real Job Examples</h3>
+              <div className="space-y-3">
+                {realJobExamples.map((job, index) => (
+                  <button
+                    key={index}
+                    onClick={() => {
+                      setJobId(job.id);
+                      setUserId(job.userId);
+                    }}
+                    className="w-full bg-blue-50 text-blue-800 p-3 rounded-lg hover:bg-blue-100 transition-colors text-left"
+                  >
+                    <div className="font-medium">{job.description}</div>
+                    <div className="text-sm">Job ID: {job.id}</div>
+                    <div className="text-sm">User ID: {job.userId}</div>
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* View Mode Toggle */}
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">View Mode</h2>
-            <div className="flex items-center bg-gray-100 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode("split")}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === "split"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Split
-              </button>
-              <button
-                onClick={() => setViewMode("map")}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === "map"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                <FiMap className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode("details")}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === "details"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                <FiList className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Content */}
-        {viewMode === "split" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Map Section */}
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900">Live Map</h2>
-              <LiveTrackingMap
-                jobId={currentJob?.id || "test-job"}
-                className="h-96"
+        {/* Manual Input */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Manual Input</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Job ID
+              </label>
+              <input
+                type="text"
+                value={jobId}
+                onChange={(e) => setJobId(e.target.value)}
+                placeholder="Enter job ID"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                User ID
+              </label>
+              <input
+                type="text"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+                placeholder="Enter user ID"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
 
-            {/* Enhanced Tracking Display */}
-            <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Tracking Details
-              </h2>
-              <div className="max-h-96 overflow-y-auto">
-                <EnhancedTrackingDisplay />
+          <div className="flex space-x-4">
+            <button
+              onClick={startTrackingTest}
+              disabled={!jobId || !userId}
+              className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              Start Tracking
+            </button>
+            
+            <button
+              onClick={() => {
+                setJobId('');
+                setUserId('');
+              }}
+              className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {/* Current Values */}
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Current Values</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Job ID:</label>
+              <div className="text-sm text-gray-600 break-all">
+                {jobId || 'Not set'}
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">User ID:</label>
+              <div className="text-sm text-gray-600 break-all">
+                {userId || 'Not set'}
               </div>
             </div>
           </div>
-        )}
-
-        {viewMode === "map" && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900">Live Map</h2>
-            <LiveTrackingMap
-              jobId={currentJob?.id || "test-job"}
-              className="h-[calc(100vh-400px)]"
-            />
-          </div>
-        )}
-
-        {viewMode === "details" && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Tracking Details
-            </h2>
-            <EnhancedTrackingDisplay />
-          </div>
-        )}
-
-        {/* Status Information */}
-        <div className="bg-white rounded-lg shadow p-6 mt-6">
-          <h2 className="text-xl font-semibold mb-4">Status Information</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <span className="text-gray-600">Job Status:</span>
-              <p className="font-medium">{currentJob?.status || "No job"}</p>
+          
+          {jobId && userId && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <div className="text-sm text-green-800">
+                <strong>Ready to track!</strong> Click "Start Tracking" to begin.
+              </div>
             </div>
-            <div>
-              <span className="text-gray-600">Tracking Active:</span>
-              <p className="font-medium">{isTrackingActive ? "Yes" : "No"}</p>
-            </div>
-            <div>
-              <span className="text-gray-600">Worker Assigned:</span>
-              <p className="font-medium">{assignedWorker ? "Yes" : "No"}</p>
-            </div>
-            <div>
-              <span className="text-gray-600">Last Update:</span>
-              <p className="font-medium">
-                {lastLocationUpdate
-                  ? new Date(lastLocationUpdate).toLocaleTimeString()
-                  : "Never"}
-              </p>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

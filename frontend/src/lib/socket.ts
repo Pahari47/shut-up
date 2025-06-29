@@ -141,6 +141,33 @@ class SocketManager {
     this.socket.on("worker_location", (data) => {
       console.log("📍 [SOCKET] Worker location update:", data);
     });
+
+    // Listen for worker location updates during job tracking
+    this.socket.on("worker_location_update", (data) => {
+      console.log("📍 [SOCKET] Worker location update during job:", data);
+    });
+
+    // Listen for job tracking events
+    this.socket.on("tracking_started", (data) => {
+      console.log("✅ [SOCKET] Job tracking started:", data);
+    });
+
+    this.socket.on("tracking_stopped", (data) => {
+      console.log("🛑 [SOCKET] Job tracking stopped:", data);
+    });
+
+    // Listen for job status updates
+    this.socket.on("job_accepted", (data) => {
+      console.log("✅ [SOCKET] Job accepted:", data);
+    });
+
+    this.socket.on("job_started", (data) => {
+      console.log("🚀 [SOCKET] Job started:", data);
+    });
+
+    this.socket.on("job_completed", (data) => {
+      console.log("🎉 [SOCKET] Job completed:", data);
+    });
   }
 
   private handleConnectionError(error: any) {
@@ -295,6 +322,26 @@ class SocketManager {
     if (this.socket && this.isConnected) {
       this.socket.emit("leave_room", { room: roomName });
       console.log(`🚪 [SOCKET] Left room: ${roomName}`);
+    }
+  }
+
+  // Join job tracking room
+  joinJobTracking(jobId: string, userId: string) {
+    if (this.socket && this.isConnected) {
+      this.socket.emit("join_job_tracking", { jobId, userId });
+      console.log(`👤 [SOCKET] Joining job tracking: ${jobId} for user: ${userId}`);
+    } else {
+      console.warn("⚠️ [SOCKET] Cannot join job tracking - socket not connected");
+    }
+  }
+
+  // Update worker location (for workers)
+  updateWorkerLocation(jobId: string, workerId: string, lat: number, lng: number) {
+    if (this.socket && this.isConnected) {
+      this.socket.emit("update_location", { jobId, workerId, lat, lng });
+      console.log(`📍 [SOCKET] Updating worker location: ${lat}, ${lng}`);
+    } else {
+      console.warn("⚠️ [SOCKET] Cannot update location - socket not connected");
     }
   }
 

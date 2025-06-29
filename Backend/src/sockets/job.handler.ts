@@ -27,6 +27,11 @@ interface WorkerHeartbeatPayload {
   lng: number;
 }
 
+interface JoinJobTrackingPayload {
+  jobId: string;
+  userId: string;
+}
+
 // Store active job tracking sessions
 const activeJobTracking = new Map<
   string,
@@ -450,6 +455,159 @@ export const registerJobSocketHandlers = (socket: any) => {
           target: liveLocations.workerId,
           set: { lat, lng, createdAt: new Date() }
         });
+    }
+  });
+
+  // New event: User joins job tracking room
+  socket.on("join_job_tracking", async ({ jobId, userId }: JoinJobTrackingPayload) => {
+    console.log("👤 [JOB_TRACKING] User joining job tracking:", {
+      jobId,
+      userId,
+      socketId: socket.id,
+    });
+
+    try {
+      // Check if this is a test scenario
+      const isTestScenario = jobId.startsWith('test-') || userId.startsWith('test-');
+      
+      if (isTestScenario) {
+        console.log("🧪 [JOB_TRACKING] Test scenario detected, allowing tracking");
+        
+        // Join the job tracking room
+        const jobRoom = `job-${jobId}`;
+        socket.join(jobRoom);
+        console.log("🏠 [JOB_TRACKING] User joined test job tracking room:", jobRoom);
+
+        // Confirm tracking started for test
+        socket.emit("tracking_started", {
+          jobId,
+          message: "Test job tracking started successfully",
+          jobStatus: "confirmed",
+          workerId: "test-worker-456",
+        });
+
+        console.log("✅ [JOB_TRACKING] Test job tracking started for user:", userId);
+        return;
+      }
+
+      // Verify the job exists and user has access (for real jobs)
+      const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
+
+      if (!job) {
+        console.log("❌ [JOB_TRACKING] Job not found:", jobId);
+        socket.emit("tracking_error", { 
+          message: "Job not found",
+          code: "JOB_NOT_FOUND",
+          details: "The requested job does not exist in our system."
+        });
+        return;
+      }
+
+      if (job.userId !== userId) {
+        console.log("❌ [JOB_TRACKING] User not authorized for this job:", {
+          jobUserId: job.userId,
+          requestUserId: userId,
+        });
+        socket.emit("tracking_error", { 
+          message: "Not authorized to track this job",
+          code: "UNAUTHORIZED",
+          details: "You can only track jobs that you created."
+        });
+        return;
+      }
+
+      // Join the job tracking room
+      const jobRoom = `job-${jobId}`;
+      socket.join(jobRoom);
+      console.log("🏠 [JOB_TRACKING] User joined job tracking room:", jobRoom);
+
+      // Handle different job statuses
+      if (job.status === "pending") {
+        console.log("⏳ [JOB_TRACKING] Job is pending - waiting for worker assignment");
+        socket.emit("tracking_started", {
+          jobId,
+          message: "Job is pending. Waiting for a worker to accept your request.",
+          jobStatus: job.status,
+          workerId: null,
+          isPending: true
+        });
+        return;
+      }
+
+      if (job.status === "no_workers_found") {
+        console.log("❌ [JOB_TRACKING] No workers found for this job");
+        socket.emit("tracking_error", { 
+          message: "No workers available",
+          code: "NO_WORKERS_FOUND",
+          details: "We couldn't find any available workers in your area. Please try again later."
+        });
+        return;
+      }
+
+      if (job.status === "cancelled") {
+        console.log("❌ [JOB_TRACKING] Job was cancelled");
+        socket.emit("tracking_error", { 
+          message: "Job was cancelled",
+          code: "JOB_CANCELLED",
+          details: "This job has been cancelled and cannot be tracked."
+        });
+        return;
+      }
+
+      // If job is assigned to a worker, get worker details and current location
+      if (job.workerId && (job.status === "confirmed" || job.status === "in_progress" || job.status === "completed")) {
+        const [worker] = await db.select().from(workers).where(eq(workers.id, job.workerId));
+        const [liveLocation] = await db
+          .select()
+          .from(liveLocations)
+          .where(eq(liveLocations.workerId, job.workerId));
+
+        if (worker) {
+          console.log("👷 [JOB_TRACKING] Worker found:", worker.firstName, worker.lastName);
+          
+          // Send worker information
+          socket.emit("worker_assigned", {
+            jobId,
+            workerId: job.workerId,
+            workerName: `${worker.firstName} ${worker.lastName}`,
+            workerPhone: worker.phoneNumber,
+            workerAvatar: worker.profilePicture || "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
+            workerExperience: worker.experienceYears
+          });
+
+          if (liveLocation) {
+            console.log("📍 [JOB_TRACKING] Sending current worker location to user");
+            socket.emit("worker_location_update", {
+              jobId,
+              workerId: job.workerId,
+              lat: liveLocation.lat,
+              lng: liveLocation.lng,
+              timestamp: liveLocation.createdAt?.toISOString() || new Date().toISOString(),
+              status: job.status,
+            });
+          }
+        } else {
+          console.log("⚠️ [JOB_TRACKING] Worker assigned but worker details not found");
+        }
+      }
+
+      // Confirm tracking started
+      socket.emit("tracking_started", {
+        jobId,
+        message: "Job tracking started successfully",
+        jobStatus: job.status,
+        workerId: job.workerId,
+        isPending: false
+      });
+
+      console.log("✅ [JOB_TRACKING] Job tracking started for user:", userId);
+    } catch (error) {
+      console.error("❌ [JOB_TRACKING] Error starting job tracking:", error);
+      socket.emit("tracking_error", { 
+        message: "Failed to start job tracking",
+        code: "INTERNAL_ERROR",
+        details: "An internal error occurred. Please try again."
+      });
     }
   });
 

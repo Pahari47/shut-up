@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@civic/auth/react";
-import { useJobTracking } from "@/lib/jobTracking";
+import { useJobTrackingContext } from "@/lib/jobTracking";
 import { PageLoadAnimation, PulsingDots } from "@/components/LoadingAnimations";
 import {
   FiMapPin,
@@ -33,7 +33,7 @@ const JobTrackingMapPage: React.FC = () => {
     connectSocket,
     error,
     clearError,
-  } = useJobTracking();
+  } = useJobTrackingContext();
 
   const mapRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<any>(null);
